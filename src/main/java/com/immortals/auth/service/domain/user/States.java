@@ -1,0 +1,51 @@
+package com.immortals.auth.service.domain.user;
+
+import com.immortals.auth.service.audit.Auditable;
+import com.immortals.auth.service.domain.entity.BaseEntity;
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import org.hibernate.envers.Audited;
+
+import java.util.Set;
+
+@Entity
+@Table(
+        name = "states",
+        schema = "user_auth",
+        indexes = {
+                @Index(name = "idx_states_country_id", columnList = "country_id"),
+                @Index(name = "idx_states_name", columnList = "state_name")
+        },
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_states_name_country", columnNames = {"state_name", "country_id"})
+        }
+)
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Audited
+public class States extends Auditable {
+
+    private static final long serialVersionUID = 1L;
+
+    @Column(name = "state_name", nullable = false, length = 100)
+    private String name;
+
+    @Column(name = "state_code", nullable = false, length = 10)
+    private String code;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "country_id", nullable = false)
+    private Country country;
+
+    @OneToMany(mappedBy = "states")
+    private transient Set<City> cities;
+
+    @Column(name = "active_ind", nullable = false)
+    private Boolean activeInd;
+}
+
