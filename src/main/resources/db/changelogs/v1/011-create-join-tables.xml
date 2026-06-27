@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <!-- user_role: @ManyToMany between User and Roles -->
+    <changeSet id="v1-011-user-role" author="immortals-ume">
+        <createTable tableName="user_role" schemaName="user_auth">
+            <column name="user_id" type="BIGINT"><constraints nullable="false"/></column>
+            <column name="role_id" type="BIGINT"><constraints nullable="false"/></column>
+        </createTable>
+
+        <addPrimaryKey constraintName="pk_user_role"
+                       tableName="user_role" schemaName="user_auth"
+                       columnNames="user_id, role_id"/>
+
+        <addForeignKeyConstraint constraintName="fk_user_role_user"
+                                 baseTableSchemaName="user_auth" baseTableName="user_role" baseColumnNames="user_id"
+                                 referencedTableSchemaName="user_auth" referencedTableName="users" referencedColumnNames="id"
+                                 onDelete="CASCADE" onUpdate="CASCADE"/>
+
+        <addForeignKeyConstraint constraintName="fk_user_role_role"
+                                 baseTableSchemaName="user_auth" baseTableName="user_role" baseColumnNames="role_id"
+                                 referencedTableSchemaName="user_auth" referencedTableName="role" referencedColumnNames="id"
+                                 onDelete="CASCADE" onUpdate="CASCADE"/>
+
+        <createIndex indexName="idx_user_role_user_id" tableName="user_role" schemaName="user_auth"><column name="user_id"/></createIndex>
+        <createIndex indexName="idx_user_role_role_id" tableName="user_role" schemaName="user_auth"><column name="role_id"/></createIndex>
+
+        <rollback>
+            <dropTable tableName="user_role" schemaName="user_auth" cascadeConstraints="true"/>
+        </rollback>
+    </changeSet>
+
+    <!-- role_permission: @ManyToMany between Roles and Permissions -->
+    <changeSet id="v1-011-role-permission" author="immortals-ume">
+        <createTable tableName="role_permission" schemaName="user_auth">
+            <column name="role_id"       type="BIGINT"><constraints nullable="false"/></column>
+            <column name="permission_id" type="BIGINT"><constraints nullable="false"/></column>
+        </createTable>
+
+        <addPrimaryKey constraintName="pk_role_permission"
+                       tableName="role_permission" schemaName="user_auth"
+                       columnNames="role_id, permission_id"/>
+
+        <addForeignKeyConstraint constraintName="fk_role_permission_role"
+                                 baseTableSchemaName="user_auth" baseTableName="role_permission" baseColumnNames="role_id"
+                                 referencedTableSchemaName="user_auth" referencedTableName="role" referencedColumnNames="id"
+                                 onDelete="CASCADE" onUpdate="CASCADE"/>
+
+        <addForeignKeyConstraint constraintName="fk_role_permission_permission"
+                                 baseTableSchemaName="user_auth" baseTableName="role_permission" baseColumnNames="permission_id"
+                                 referencedTableSchemaName="user_auth" referencedTableName="permission" referencedColumnNames="id"
+                                 onDelete="CASCADE" onUpdate="CASCADE"/>
+
+        <createIndex indexName="idx_role_permission_role_id"       tableName="role_permission" schemaName="user_auth"><column name="role_id"/></createIndex>
+        <createIndex indexName="idx_role_permission_permission_id" tableName="role_permission" schemaName="user_auth"><column name="permission_id"/></createIndex>
+
+        <rollback>
+            <dropTable tableName="role_permission" schemaName="user_auth" cascadeConstraints="true"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

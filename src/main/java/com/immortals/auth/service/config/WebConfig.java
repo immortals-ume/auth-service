@@ -1,7 +1,7 @@
 package com.immortals.auth.service.config;
 
 import com.immortals.auth.service.security.interceptor.ClientIpInterceptor;
-import lombok.RequiredArgsConstructor;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,12 +15,15 @@ import org.springframework.web.servlet.resource.VersionResourceResolver;
 import java.util.concurrent.TimeUnit;
 
 @Configuration
-@RequiredArgsConstructor
 public class WebConfig implements WebMvcConfigurer {
     private final ClientIpInterceptor ipAddressInterceptor;
 
     @Value("${auth.cache.static-resources.max-age-seconds}")
     private Long maxAgeInSeconds;
+
+    public WebConfig(ClientIpInterceptor ipAddressInterceptor) {
+        this.ipAddressInterceptor = ipAddressInterceptor;
+    }
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {

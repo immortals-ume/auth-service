@@ -1,0 +1,160 @@
+server:
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 1024
+
+spring:
+  sql:
+    init:
+      mode: never
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:noreply@shopwire.dev}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  liquibase:
+    change-log: classpath:db/changelog-master.xml
+    enabled: true
+    liquibase-schema: public
+  devtools:
+    restart:
+      enabled: true
+      additional-paths: src/main/java
+      exclude: static/**,public/**
+      livereload:
+        enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: always
+  auditevents:
+    enabled: true
+  tracing:
+    enabled: false
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+logging:
+  pattern:
+    level: "%5p [traceId=%X{traceId},spanId=%X{spanId}]"
+  level:
+    com.immortals.auth.service: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.tool.schema.internal.SchemaCreatorImpl: TRACE
+    org.springframework.cloud.vault: DEBUG
+    org.springframework.cloud.config: DEBUG
+    org.springframework: INFO
+
+datasource:
+  write:
+    url: jdbc:postgresql://localhost:5432/user_db
+    username: admin
+    password: admin
+    driver-class-name: org.postgresql.Driver
+  read:
+    url: jdbc:postgresql://localhost:5432/user_db
+    username: replicator
+    password: replicator
+    driver-class-name: org.postgresql.Driver
+  core:
+    show-sql: true
+    generate-ddl: false
+    hibernate:
+      ddl-auto: update
+      dialect: org.hibernate.dialect.PostgreSQLDialect
+      format-sql: true
+      envers:
+        audit-table-suffix: _AUD
+        revision-field-name: rev
+        revision-type-field-name: rev_type
+        store-data-at-delete: true
+        default-schema: user_audit
+
+auth:
+  jwt-issuer: http://localhost:8080
+  base-url: http://localhost:8080
+  access-token-expiry-ms: 900000
+  refresh-token-expiry-ms: 604800000
+  max-login-attempts: 5
+  login-block-duration-minutes: 15
+  cache:
+    static-resources:
+      max-age-seconds: 31536000
+  cors:
+    allowed-origins:
+      - "http://localhost:3000"
+      - "http://localhost:4200"
+    allowed-methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "PATCH"
+      - "DELETE"
+      - "OPTIONS"
+    allowed-headers:
+      - "*"
+    allow-credentials: true
+    max-age: 3600
+  cookie:
+    access-token-name: access_token
+    refresh-token-name: refresh_token
+    domain: localhost
+    path: /
+    secure: false
+    http-only: true
+    access-token-max-age-seconds: 900
+    refresh-token-max-age-seconds: 604800
+
+jwt-private-key: |
+  -----BEGIN PRIVATE KEY-----
+  MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDG8uMbmMo0moWA
+  sYH/9qTEQrS5txm/eT1ZLt6ROCdDFASSSfuqozM8d7aMfdia1riN2wWfVch0c7uB
+  5m9HnMjY+urA+ug0Zp4gXSUFmcI9mvfCvwLTEztg0b/dzgwFLLpeXBOj7vq0MFG4
+  cNWUsfv53rzmw3T9DL2AVHQ3/3XUnxHV1Hu9z72dIcKrzJ7Xj23RPoEN+w1i8AXa
+  k07ZsdKwTXjPDeQWKEmojXQzUomBLoLmRUT+f22AEnC6Vw/zJdbj3VomtyUp3Qd6
+  yt00cAZ42mVjkCEqrgGJmxye5/QeCntrmbaInB0Lwg3wDF9woeK4HjfVfzaHMtGy
+  tj9yaRq7AgMBAAECggEAYJ1iqiu8guhJjhJmGfpa0M6+OnRPhjtoDg/jWS2mb35g
+  q/ROyfLAdoyCc97HmoZNEOK868B6fQcZF7/i6ambpjfQWlBfBNeS0g+542rkuAsy
+  Z/pf8kZkLyQdY6dlEfxDM4DOru1nBatzfDkbl78JqbJAFWb1QNB3lMMuv2UJgWuz
+  19CEd5KgORqb1OLoiBoNCkLUiknBCRe88ihgls4goE6xUNtozjYa868zk99xi0XD
+  Nq5vA0pj0LSsa/0ow9/tCe0RvVKCfj614DOIhoJDeMLe/q3lIshPcs0irQGjLVFo
+  sS7RF5BZUAP8D6pw/AnfGZ9vNNs612P3crQxP5zRDQKBgQD9G2V8pm4Wq/FRsxR8
+  GRMpWbB8jQuGgiLa+tUHQwpt1rD5jR4W4V2N6Ozbkm2bWx6v2CTrCNgA92shG/0z
+  1KMPZ3mWKmoy/dg/ew0s4FxP/6vRPZFQoa/rFrmP/dRr1Q2m7m8fjGex535gl5Pu
+  kgh0MjwD7Y2NjBBh/pq26Lhl3wKBgQDJOQVitfLM/JByQzmuyYx6a8m6F1xi8cyl
+  +nECvusgL6/9Y5fpaQD0PZKtu/0us3EgzBEo09C4EQqHJn0NeHHniW+CBlhURRCZ
+  sU/+AVeUttFAKiehHdogem3nCcsmg+89gnWAcqvqWCviLchzEdJ868zGpK8OsQWw
+  lPpHBSrOpQKBgQCcQimphuY4QPa+xZxD8QcPZDu86SbQZ880+d5CmXT60qx3pFOL
+  NJ8ZWU/BTuk0HFEZpotEPzV7g0Q0MJ9lPEVe4TcDKjRePrEen81Gg0z6ZpGgoC3y
+  ZZ/Bt0ngR4i4+dNv14vrIjdyccRnxayigK2PbuP2WNYnKO2EUjcZ7RrKaQKBgQCH
+  DA3hQdvCV39aMGP2Oq5dOxoYGrWWclG2024lOZzz7Q1gMgcyT5akVO6sSw6Q2T2D
+  lXGuxPm/jzBRpDMpZzyK+GIuEbQWWoPZonbdMmllFY06UxBlwXMzePdpp9j/8GwQ
+  DA5wNoXKsYJCOhfdoohx7o9wgfY7FfOLn3CZWY5xQQKBgQDggcocxFnEaFbbcDzl
+  7D7Vd2fmhELoGFGm+moOCsml9DvUeOU3ylls8i5FIj9eL9tMIgpkoqEhCgj809rJ
+  IE9paHbuMTGa1fsNkglJqKH2oknUCpJyuk2ehZUU7StHUk3XL88gUvkr6xVWsWhH
+  oAg5Gmc+31Ie9X45TWeUfYejPw==
+  -----END PRIVATE KEY-----
+
+jwt-public-key: |
+  -----BEGIN PUBLIC KEY-----
+  MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxvLjG5jKNJqFgLGB//ak
+  xEK0ubcZv3k9WS7ekTgnQxQEkkn7qqMzPHe2jH3Ymta4jdsFn1XIdHO7geZvR5zI
+  2PrqwProNGaeIF0lBZnCPZr3wr8C0xM7YNG/3c4MBSy6XlwTo+76tDBRuHDVlLH7
+  +d685sN0/Qy9gFR0N/911J8R1dR7vc+9nSHCq8ye149t0T6BDfsNYvAF2pNO2bHS
+  sE14zw3kFihJqI10M1KJgS6C5kVE/n9tgBJwulcP8yXW491aJrclKd0HesrdNHAG
+  eNplY5AhKq4BiZscnuf0Hgp7a5m2iJwdC8IN8AxfcKHiuB431X82hzLRsrY/cmka
+  uwIDAQAB
+  -----END PUBLIC KEY-----

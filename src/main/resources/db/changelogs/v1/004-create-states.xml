@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="v1-004-states" author="immortals-ume">
+        <createTable tableName="states" schemaName="user_auth">
+            <column name="id" type="BIGINT" defaultValueComputed="nextval('user_auth.states_seq')">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="version" type="BIGINT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="state_name" type="VARCHAR(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="state_code" type="VARCHAR(10)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="country_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="active_ind" type="BOOLEAN" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_by" type="VARCHAR(255)"/>
+            <column name="updated_date" type="TIMESTAMP"/>
+            <column name="deleted_by" type="VARCHAR(255)"/>
+            <column name="deleted_date" type="TIMESTAMP"/>
+        </createTable>
+
+        <addUniqueConstraint constraintName="uk_states_name_country"
+                             tableName="states" schemaName="user_auth"
+                             columnNames="state_name, country_id"/>
+
+        <addForeignKeyConstraint constraintName="fk_states_country"
+                                 baseTableSchemaName="user_auth" baseTableName="states" baseColumnNames="country_id"
+                                 referencedTableSchemaName="user_auth" referencedTableName="countries"
+                                 referencedColumnNames="id"
+                                 onDelete="RESTRICT" onUpdate="CASCADE"/>
+
+        <createIndex indexName="idx_states_country_id" tableName="states" schemaName="user_auth">
+            <column name="country_id"/>
+        </createIndex>
+        <createIndex indexName="idx_states_name" tableName="states" schemaName="user_auth">
+            <column name="state_name"/>
+        </createIndex>
+
+        <rollback>
+            <dropTable tableName="states" schemaName="user_auth" cascadeConstraints="true"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

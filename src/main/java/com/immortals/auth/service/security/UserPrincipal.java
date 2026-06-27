@@ -2,7 +2,6 @@ package com.immortals.auth.service.security;
 
 import com.immortals.auth.service.domain.entity.Roles;
 import com.immortals.auth.service.domain.entity.User;
-import lombok.Getter;
 import net.minidev.json.annotate.JsonIgnore;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -12,7 +11,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Objects;
 
-@Getter
+
 public class UserPrincipal implements UserDetails {
 
     private final Long userId;
@@ -61,15 +60,15 @@ public class UserPrincipal implements UserDetails {
         Collection<? extends GrantedAuthority> authorities = extractAuthorities(roles);
         return new UserPrincipal(
                 user.getId(),
-                user.getUserName(),
-                user.getPassword(),
-                user.getEmail(),
+                user.userName(),
+                user.password(),
+                user.email(),
                 authorities,
                 permissions,
-                Boolean.TRUE.equals(user.getAccountNonExpired()),
-                Boolean.TRUE.equals(user.getAccountNonLocked()) && !Boolean.TRUE.equals(user.getAccountLocked()),
-                Boolean.TRUE.equals(user.getCredentialsNonExpired()),
-                Boolean.TRUE.equals(user.getActiveInd())
+                Boolean.TRUE.equals(user.accountNonExpired()),
+                Boolean.TRUE.equals(user.accountNonLocked()) && !Boolean.TRUE.equals(user.accountLocked()),
+                Boolean.TRUE.equals(user.credentialsNonExpired()),
+                Boolean.TRUE.equals(user.activeInd())
         );
     }
 
@@ -84,6 +83,11 @@ public class UserPrincipal implements UserDetails {
     @Override
     public String getUsername() {
         return userName;
+    }
+
+    @Override
+    public String getPassword() {
+        return password;
     }
 
     @Override
@@ -121,5 +125,17 @@ public class UserPrincipal implements UserDetails {
     @Override
     public int hashCode() {
         return Objects.hash(userId);
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public Collection<String> getPermissions() {
+        return permissions;
     }
 }

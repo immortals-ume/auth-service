@@ -3,8 +3,8 @@ package com.immortals.auth.service.service.impl;
 import com.immortals.auth.service.domain.entity.LoginAttempt;
 import com.immortals.auth.service.repository.LoginAttemptRepository;
 import com.immortals.auth.service.service.LoginAttemptService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import com.immortals.logging.api.ILogger;
+import com.immortals.logging.core.LogManager;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -12,9 +12,9 @@ import java.time.Duration;
 import java.time.Instant;
 
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class LoginAttemptServiceImpl implements LoginAttemptService {
+
+    private static final ILogger log = LogManager.getInstance().getLogger(LoginAttemptServiceImpl.class);
 
     private final LoginAttemptRepository repository;
 
@@ -24,13 +24,17 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
     @Value("${auth.login-block-duration-minutes}")
     private int blockDurationMinutes;
 
+    public LoginAttemptServiceImpl(LoginAttemptRepository repository) {
+        this.repository = repository;
+    }
+
     @Override
     public void loginSucceeded(String username) {
         try {
             resetAttempts(username);
-            log.debug("Login succeeded for user: {}", username);
+            log.debug("Login succeeded for helpers: {}", username);
         } catch (Exception e) {
-            log.error("Error clearing login attempts for user: {}", username, e);
+            log.error("Error clearing login attempts for helpers: {}", username, e);
         }
     }
 
@@ -41,7 +45,7 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
                     .orElseGet(() -> createNew(username));
 
             entity.setFailedAttempts(entity.getFailedAttempts() + 1);
-            entity.setUpdatedAt(Instant.now());
+            entity.setLastAttemptAt(Instant.now());
 
             if (entity.getFailedAttempts() >= maxAttempts) {
                 entity.setBlockedAt(Instant.now());
@@ -50,10 +54,10 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
 
             repository.save(entity);
 
-            log.warn("Login failed for user: {}, attempts: {}", username, entity.getFailedAttempts());
+            log.warn("Login failed for helpers: {}, attempts: {}", username, entity.getFailedAttempts());
 
         } catch (Exception e) {
-            log.error("Error tracking login failure for user: {}", username, e);
+            log.error("Error tracking login failure for helpers: {}", username, e);
         }
     }
 
@@ -77,7 +81,7 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
             }
 
         } catch (Exception e) {
-            log.error("Error checking block for user: {}", username, e);
+            log.error("Error checking block for helpers: {}", username, e);
             return false;
         }
     }
@@ -86,9 +90,9 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
     public void resetAttempts(String username) {
         try {
             repository.deleteById(username);
-            log.debug("Reset login attempts for user: {}", username);
+            log.debug("Reset login attempts for helpers: {}", username);
         } catch (Exception e) {
-            log.error("Error resetting login attempts for user: {}", username, e);
+            log.error("Error resetting login attempts for helpers: {}", username, e);
         }
     }
 
@@ -99,7 +103,7 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
                     .map(LoginAttempt::getFailedAttempts)
                     .orElse(0L));
         } catch (Exception e) {
-            log.error("Error getting failed attempts for user: {}", username, e);
+            log.error("Error getting failed attempts for helpers: {}", username, e);
             return 0;
         }
     }
@@ -109,7 +113,7 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
                 .username(username)
                 .failedAttempts(0L)
                 .blockedAt(null)
-                .updatedAt(Instant.now())
+                .lastAttemptAt(Instant.now())
                 .build();
     }
 
@@ -118,7 +122,7 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
             repository.deleteById(username);
             log.info("User {} unblocked", username);
         } catch (Exception e) {
-            log.error("Error unblocking user: {}", username, e);
+            log.error("Error unblocking helpers: {}", username, e);
         }
     }
 
@@ -142,7 +146,7 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
             return Duration.ZERO;
 
         } catch (Exception e) {
-            log.error("Error getting remaining block time for user: {}", username, e);
+            log.error("Error getting remaining block time for helpers: {}", username, e);
             return Duration.ZERO;
         }
     }

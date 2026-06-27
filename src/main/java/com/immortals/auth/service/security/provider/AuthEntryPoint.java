@@ -1,10 +1,13 @@
 package com.immortals.auth.service.security.provider;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.immortals.auth.service.audit.AuditingRevisionListener;
+import com.immortals.auth.service.utils.ObjectMapperUtils;
+import com.immortals.logging.api.ILogger;
+import com.immortals.logging.core.LogManager;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.http.MediaType;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -14,10 +17,11 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-@Slf4j
+
 @Component
 public class AuthEntryPoint implements AuthenticationEntryPoint {
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final ILogger log =
+            LogManager.getInstance().getLogger(AuditingRevisionListener.class);
 
     @Override
     public void commence(HttpServletRequest request,
@@ -36,7 +40,7 @@ public class AuthEntryPoint implements AuthenticationEntryPoint {
             responseBody.put("message", authException.getMessage());
             responseBody.put("path", request.getRequestURI());
 
-            objectMapper.writeValue(response.getOutputStream(), responseBody);
+            ObjectMapperUtils.mapper().writeValue(response.getOutputStream(), responseBody);
         } catch (IOException e) {
             log.error("Failed to write response: {}", e.getMessage());
             throw new ServletException("Unable to write response", e);

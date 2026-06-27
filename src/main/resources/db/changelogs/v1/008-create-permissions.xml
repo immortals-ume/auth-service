@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="v1-008-permissions" author="immortals-ume">
+        <createTable tableName="permission" schemaName="user_auth">
+            <!-- BaseEntity -->
+            <column name="id" type="BIGINT" defaultValueComputed="nextval('user_auth.permission_seq')">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="version" type="BIGINT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <!-- @Column(name = "permission_name") -->
+            <column name="permission_name" type="VARCHAR(50)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uk_permission_name"/>
+            </column>
+            <column name="description" type="VARCHAR(200)"/>
+            <column name="active_ind" type="BOOLEAN" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <!-- Auditable -->
+            <column name="created_by" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_by" type="VARCHAR(255)"/>
+            <column name="updated_date" type="TIMESTAMP"/>
+            <column name="deleted_by" type="VARCHAR(255)"/>
+            <column name="deleted_date" type="TIMESTAMP"/>
+        </createTable>
+
+        <createIndex indexName="idx_permission_name" tableName="permission" schemaName="user_auth">
+            <column name="permission_name"/>
+        </createIndex>
+        <createIndex indexName="idx_permission_active" tableName="permission" schemaName="user_auth">
+            <column name="active_ind"/>
+        </createIndex>
+
+        <rollback>
+            <dropTable tableName="permission" schemaName="user_auth" cascadeConstraints="true"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

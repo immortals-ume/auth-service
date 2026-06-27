@@ -3,7 +3,6 @@ package com.immortals.auth.service.config;
 import com.immortals.auth.service.domain.CorsProperties;
 import com.immortals.auth.service.security.filters.JwtAuthenticationFilter;
 import com.immortals.auth.service.security.provider.AuthEntryPoint;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -28,13 +27,19 @@ import static com.immortals.auth.service.constant.AuthConstants.*;
 
 @Configuration
 @EnableWebSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final AuthEntryPoint unauthorizedHandler;
     private final UserDetailsService userDetailsService;
     private final CorsProperties corsProperties;
+
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthFilter, AuthEntryPoint unauthorizedHandler, UserDetailsService userDetailsService, CorsProperties corsProperties) {
+        this.jwtAuthFilter = jwtAuthFilter;
+        this.unauthorizedHandler = unauthorizedHandler;
+        this.userDetailsService = userDetailsService;
+        this.corsProperties = corsProperties;
+    }
 
     @Bean("passwordEncoder")
     public PasswordEncoder passwordEncoder() {
@@ -49,7 +54,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) {
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
 
@@ -67,7 +72,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
         http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)

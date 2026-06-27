@@ -1,46 +1,36 @@
 package com.immortals.auth.service.audit;
 
+import com.immortals.auth.service.context.ApplicationContextHolder;
 import com.immortals.auth.service.domain.AuditingRevisionEntity;
-import lombok.extern.slf4j.Slf4j;
+import com.immortals.logging.api.ILogger;
+import com.immortals.logging.core.LogManager;
 import org.hibernate.envers.RevisionListener;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 
-@Slf4j
+import static com.immortals.auth.service.constant.AuthConstants.SYSTEM_PRINCIPAL;
+
 public class AuditingRevisionListener implements RevisionListener {
 
-    private static final String DEFAULT_SYSTEM_USER = "SYSTEM";
-    private static final String ANONYMOUS_USER = "anonymousUser";
+    private static final ILogger log =
+            LogManager.getInstance().getLogger(AuditingRevisionListener.class);
 
     @Override
     public void newRevision(Object revisionEntity) {
-
         AuditingRevisionEntity entity = (AuditingRevisionEntity) revisionEntity;
-
-        String currentUser = resolveCurrentUser();
-
-        entity.setUsername(currentUser);
+        entity.setUsername(resolveUser());
     }
 
-    private String resolveCurrentUser() {
+    private String resolveUser() {
+        if (!ApplicationContextHolder.isReady()) {
+            log.warn("ApplicationContext not ready — falling back to '{}'", SYSTEM_PRINCIPAL);
+            return SYSTEM_PRINCIPAL;
+        }
+
         try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-
-            if (auth == null || !auth.isAuthenticated()) {
-                return DEFAULT_SYSTEM_USER;
-            }
-
-            String username = auth.getName();
-
-            if (username == null || ANONYMOUS_USER.equals(username)) {
-                return DEFAULT_SYSTEM_USER;
-            }
-
-            return username;
-
+            UserAuditResolver resolver = ApplicationContextHolder.getBean(UserAuditResolver.class);
+            return resolver.resolve();
         } catch (Exception e) {
-            log.warn("Failed to resolve current user for auditing. Falling back to SYSTEM.", e);
-            return DEFAULT_SYSTEM_USER;
+            log.warn("UserAuditResolver unavailable — falling back to '{}'", SYSTEM_PRINCIPAL, e);
+            return SYSTEM_PRINCIPAL;
         }
     }
 }

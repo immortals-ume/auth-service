@@ -1,0 +1,58 @@
+# ──────────────────────────────────────────────────────────────────────────────────────────────
+# PROD profile overrides.
+# Vault + Config Server are MANDATORY here (no optional: prefix).
+# Set env vars: VAULT_URI, VAULT_ROLE_ID, VAULT_SECRET_ID, CONFIG_SERVER_URI, EUREKA_URI
+# ──────────────────────────────────────────────────────────────────────────────────────────────
+
+spring:
+  devtools:
+    restart:
+      enabled: false
+  config:
+    import:
+      - "vault://"
+      - "configserver:"
+
+  cloud:
+    vault:
+      authentication: APPROLE
+      token: ""
+      app-role:
+        role-id: ${VAULT_ROLE_ID}
+        secret-id: ${VAULT_SECRET_ID}
+        role: auth-service
+        app-role-path: approle
+    config:
+      fail-fast: true
+      retry:
+        max-attempts: 10
+        initial-interval: 2000
+        max-interval: 5000
+
+server:
+  address: 0.0.0.0
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 1024
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,metrics,prometheus"
+  endpoint:
+    health:
+      show-details: when-authorized
+  tracing:
+    enabled: true
+    sampling:
+      probability: 0.1
+
+logging:
+  level:
+    com.immortals.auth.service: INFO
+    org.hibernate.SQL: WARN
+    org.springframework: WARN
+    org.springframework.cloud.vault: INFO
+    org.springframework.cloud.config: INFO

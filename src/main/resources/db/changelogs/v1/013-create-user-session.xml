@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <!-- user_session.user_session — tracks active login sessions per user -->
+    <changeSet id="v1-013-user-session" author="immortals-ume">
+        <createTable tableName="user_session" schemaName="user_session">
+            <column name="id"               type="BIGINT"       defaultValueComputed="nextval('user_session.user_session_seq')"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="version"          type="BIGINT"       defaultValueNumeric="0"><constraints nullable="false"/></column>
+            <column name="user_id"          type="BIGINT"><constraints nullable="false"/></column>
+            <column name="login_time"       type="TIMESTAMP"><constraints nullable="false"/></column>
+            <column name="logout_time"      type="TIMESTAMP"/>
+            <column name="jwt_id"           type="VARCHAR(255)"/>
+            <column name="refresh_token_id" type="VARCHAR(255)"/>
+            <column name="ip_address"       type="VARCHAR(45)"/>
+            <column name="user_agent"       type="TEXT"/>
+            <column name="device_info"      type="VARCHAR(255)"/>
+            <column name="session_active"   type="BOOLEAN"      defaultValueBoolean="true"><constraints nullable="false"/></column>
+            <column name="created_by"       type="VARCHAR(255)"><constraints nullable="false"/></column>
+            <column name="created_date"     type="TIMESTAMP"><constraints nullable="false"/></column>
+            <column name="updated_by"       type="VARCHAR(255)"/>
+            <column name="updated_date"     type="TIMESTAMP"/>
+            <column name="deleted_by"       type="VARCHAR(255)"/>
+            <column name="deleted_date"     type="TIMESTAMP"/>
+        </createTable>
+
+        <addForeignKeyConstraint constraintName="fk_user_session_user"
+                                 baseTableSchemaName="user_session" baseTableName="user_session" baseColumnNames="user_id"
+                                 referencedTableSchemaName="user_auth"  referencedTableName="users"       referencedColumnNames="id"
+                                 onDelete="CASCADE" onUpdate="CASCADE"/>
+
+        <createIndex indexName="idx_user_session_user_id"    tableName="user_session" schemaName="user_session"><column name="user_id"/></createIndex>
+        <createIndex indexName="idx_user_session_active"     tableName="user_session" schemaName="user_session"><column name="session_active"/></createIndex>
+        <createIndex indexName="idx_user_session_login_time" tableName="user_session" schemaName="user_session"><column name="login_time"/></createIndex>
+        <createIndex indexName="idx_user_session_jwt_id"     tableName="user_session" schemaName="user_session"><column name="jwt_id"/></createIndex>
+
+        <rollback>
+            <dropTable tableName="user_session" schemaName="user_session" cascadeConstraints="true"/>
+        </rollback>
+    </changeSet>
+
+    <!-- user_session.refresh_token — persisted refresh token store -->
+    <changeSet id="v1-013-refresh-token" author="immortals-ume">
+        <createTable tableName="refresh_token" schemaName="user_session">
+            <column name="id"           type="BIGINT"       defaultValueComputed="nextval('user_session.refresh_token_seq')"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="user_id"      type="BIGINT"><constraints nullable="false"/></column>
+            <column name="token_hash"   type="VARCHAR(500)"><constraints nullable="false"/></column>
+            <column name="expires_at"   type="TIMESTAMP"><constraints nullable="false"/></column>
+            <column name="revoked"      type="BOOLEAN"      defaultValueBoolean="false"><constraints nullable="false"/></column>
+            <column name="revoked_at"   type="TIMESTAMP"/>
+            <column name="ip_address"   type="VARCHAR(45)"/>
+            <column name="device_info"  type="VARCHAR(255)"/>
+            <column name="created_date" type="TIMESTAMP"    defaultValueDate="now()"/>
+        </createTable>
+
+        <addForeignKeyConstraint constraintName="fk_refresh_token_user"
+                                 baseTableSchemaName="user_session" baseTableName="refresh_token" baseColumnNames="user_id"
+                                 referencedTableSchemaName="user_auth"  referencedTableName="users"        referencedColumnNames="id"
+                                 onDelete="CASCADE" onUpdate="CASCADE"/>
+
+        <createIndex indexName="idx_refresh_token_user_id"    tableName="refresh_token" schemaName="user_session"><column name="user_id"/></createIndex>
+        <createIndex indexName="idx_refresh_token_revoked"    tableName="refresh_token" schemaName="user_session"><column name="revoked"/></createIndex>
+        <createIndex indexName="idx_refresh_token_expires_at" tableName="refresh_token" schemaName="user_session"><column name="expires_at"/></createIndex>
+
+        <rollback>
+            <dropTable tableName="refresh_token" schemaName="user_session" cascadeConstraints="true"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

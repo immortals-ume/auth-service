@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="v1-015-fix-role-aud-revtype" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="role_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="role_AUD" schemaName="user_audit" oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+    <changeSet id="v1-015-fix-permission-aud-revtype" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="permission_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="permission_AUD" schemaName="user_audit" oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+    <changeSet id="v1-015-fix-login-attempt-aud-revtype" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="login_attempt_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="login_attempt_AUD" schemaName="user_audit" oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+    <changeSet id="v1-015-fix-user-address-aud-revtype" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="user_address_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="user_address_AUD" schemaName="user_audit" oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+    <changeSet id="v1-015-fix-countries-aud-revtype" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="countries_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="countries_AUD" schemaName="user_audit" oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+    <changeSet id="v1-015-fix-states-aud-revtype" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="states_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="states_AUD" schemaName="user_audit" oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+    <changeSet id="v1-015-fix-cities-aud-revtype" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="cities_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="cities_AUD" schemaName="user_audit" oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+</databaseChangeLog>
+

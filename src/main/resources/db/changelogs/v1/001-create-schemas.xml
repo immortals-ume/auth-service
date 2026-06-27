@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="v1-001-schemas" author="immortals-ume" runOnChange="false">
+        <comment>Create application schemas</comment>
+        <sql>
+            CREATE SCHEMA IF NOT EXISTS user_auth;
+            CREATE SCHEMA IF NOT EXISTS user_audit;
+            CREATE SCHEMA IF NOT EXISTS user_session;
+            CREATE SCHEMA IF NOT EXISTS user_oauth;
+            CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+            CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+        </sql>
+        <rollback>
+            <sql>
+                DROP SCHEMA IF EXISTS user_oauth CASCADE;
+                DROP SCHEMA IF EXISTS user_session CASCADE;
+                DROP SCHEMA IF EXISTS user_audit CASCADE;
+                DROP SCHEMA IF EXISTS user_auth CASCADE;
+            </sql>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

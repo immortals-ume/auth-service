@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <!-- Per-table sequences in user_auth schema (allocationSize=50 matches @SequenceGenerator) -->
+    <changeSet id="v1-002-seq-countries" author="immortals-ume">
+        <createSequence sequenceName="countries_seq"
+                        schemaName="user_auth"
+                        startValue="1"
+                        incrementBy="50"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="countries_seq" schemaName="user_auth"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v1-002-seq-states" author="immortals-ume">
+        <createSequence sequenceName="states_seq"
+                        schemaName="user_auth"
+                        startValue="1"
+                        incrementBy="50"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="states_seq" schemaName="user_auth"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v1-002-seq-cities" author="immortals-ume">
+        <createSequence sequenceName="cities_seq"
+                        schemaName="user_auth"
+                        startValue="1"
+                        incrementBy="50"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="cities_seq" schemaName="user_auth"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v1-002-seq-users" author="immortals-ume">
+        <createSequence sequenceName="users_seq"
+                        schemaName="user_auth"
+                        startValue="1"
+                        incrementBy="50"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="users_seq" schemaName="user_auth"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v1-002-seq-role" author="immortals-ume">
+        <createSequence sequenceName="role_seq"
+                        schemaName="user_auth"
+                        startValue="1"
+                        incrementBy="50"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="role_seq" schemaName="user_auth"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v1-002-seq-permission" author="immortals-ume">
+        <createSequence sequenceName="permission_seq"
+                        schemaName="user_auth"
+                        startValue="1"
+                        incrementBy="50"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="permission_seq" schemaName="user_auth"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v1-002-seq-login-attempt" author="immortals-ume">
+        <createSequence sequenceName="login_attempt_seq"
+                        schemaName="user_auth"
+                        startValue="1"
+                        incrementBy="50"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="login_attempt_seq" schemaName="user_auth"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v1-002-seq-user-address" author="immortals-ume">
+        <createSequence sequenceName="user_address_seq"
+                        schemaName="user_auth"
+                        startValue="1"
+                        incrementBy="50"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="user_address_seq" schemaName="user_auth"/>
+        </rollback>
+    </changeSet>
+
+    <!-- Per-table sequences in user_session schema -->
+    <changeSet id="v1-002-seq-user-session" author="immortals-ume">
+        <createSequence sequenceName="user_session_seq"
+                        schemaName="user_session"
+                        startValue="1"
+                        incrementBy="50"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="user_session_seq" schemaName="user_session"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v1-002-seq-refresh-token" author="immortals-ume">
+        <createSequence sequenceName="refresh_token_seq"
+                        schemaName="user_session"
+                        startValue="1"
+                        incrementBy="50"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="refresh_token_seq" schemaName="user_session"/>
+        </rollback>
+    </changeSet>
+
+    <!-- Dedicated sequence for Envers revision numbers (allocationSize=1, monotone) -->
+    <changeSet id="v1-002-seq-revinfo" author="immortals-ume">
+        <createSequence sequenceName="revinfo_seq"
+                        schemaName="user_audit"
+                        startValue="1"
+                        incrementBy="1"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="revinfo_seq" schemaName="user_audit"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

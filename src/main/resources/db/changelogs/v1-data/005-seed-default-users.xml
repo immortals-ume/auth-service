@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <!--
+        Default seed users (change passwords immediately after first deployment):
+          admin   / Admin@1234  → ROLE_ADMIN
+          sysuser / User@1234   → ROLE_USER
+
+        Passwords are hashed with pgcrypto bcrypt (cost 12) at migration time.
+        Spring Security BCryptPasswordEncoder is compatible with $2a$ prefix.
+    -->
+
+    <changeSet id="v1-data-005-default-users" author="immortals-ume">
+        <sql>
+            INSERT INTO user_auth.users (
+                id, version,
+                first_name, last_name, user_name, password,
+                email, email_verified,
+                phone_code, contact_number, phone_number_verified,
+                account_non_expired, account_non_locked, account_locked,
+                credentials_non_expired, active_ind,
+                created_by, created_date
+            ) VALUES (
+                nextval('user_auth.users_seq'), 0,
+                'System', 'Admin', 'sysadmin',
+                crypt('Admin@1234', gen_salt('bf', 12)),
+                'admin@shopwire.internal', true,
+                '+91', '9000000001', true,
+                true, true, false, true, true,
+                'system', now()
+            ), (
+                nextval('user_auth.users_seq'), 0,
+                'System', 'User', 'sysuser',
+                crypt('User@1234', gen_salt('bf', 12)),
+                'user@shopwire.internal', true,
+                '+91', '9000000002', true,
+                true, true, false, true, true,
+                'system', now()
+            );
+        </sql>
+
+        <!-- Assign ROLE_ADMIN to sysadmin -->
+        <sql>
+            INSERT INTO user_auth.user_role (user_id, role_id)
+            SELECT u.id, r.id
+            FROM user_auth.users u, user_auth.role r
+            WHERE u.user_name = 'sysadmin'
+              AND r.role_name = 'ROLE_ADMIN';
+        </sql>
+
+        <!-- Assign ROLE_USER to sysuser -->
+        <sql>
+            INSERT INTO user_auth.user_role (user_id, role_id)
+            SELECT u.id, r.id
+            FROM user_auth.users u, user_auth.role r
+            WHERE u.user_name = 'sysuser'
+              AND r.role_name = 'ROLE_USER';
+        </sql>
+
+        <rollback>
+            <sql>
+                DELETE FROM user_auth.user_role
+                WHERE user_id IN (
+                    SELECT id FROM user_auth.users WHERE user_name IN ('sysadmin', 'sysuser')
+                );
+                DELETE FROM user_auth.users WHERE user_name IN ('sysadmin', 'sysuser');
+            </sql>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

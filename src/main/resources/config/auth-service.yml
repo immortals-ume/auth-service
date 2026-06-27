@@ -1,0 +1,112 @@
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# CONFIG SERVER TEMPLATE
+# Place this file in your Config Server git repository as:
+#   {config-repo}/auth-app.yml          ← common (all profiles)
+#   {config-repo}/auth-app-dev.yml      ← dev overrides
+#   {config-repo}/auth-app-prod.yml     ← prod overrides
+#
+# Config Server serves: http://localhost:8888/auth-app/{profile}
+# Secrets (passwords, JWT keys) come from Vault — NOT from here.
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+
+spring:
+  sql:
+    init:
+      mode: never
+
+  liquibase:
+    change-log: classpath:db/changelog-master.xml
+    enabled: true
+    default-schema: user_auth
+    liquibase-schema: public
+
+server:
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 1024
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: always
+  auditevents:
+    enabled: true
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+logging:
+  pattern:
+    level: "%5p [traceId=%X{traceId},spanId=%X{spanId}]"
+  level:
+    com.immortals.auth.service: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.springframework: INFO
+
+# ── Datasource (URLs and usernames — passwords come from Vault) ───────────────────────────────
+datasource:
+  write:
+    url: jdbc:postgresql://localhost:5432/user_db
+    username: admin
+    driver-class-name: org.postgresql.Driver
+  read:
+    url: jdbc:postgresql://localhost:5432/user_db
+    username: replicator
+    driver-class-name: org.postgresql.Driver
+  core:
+    show-sql: true
+    generate-ddl: false
+    hibernate:
+      ddl-auto: validate
+      dialect: org.hibernate.dialect.PostgreSQLDialect
+      format-sql: true
+      envers:
+        audit-table-suffix: _AUD
+        revision-field-name: rev
+        revision-type-field-name: rev_type
+        store-data-at-delete: true
+        default-schema: user_audit
+
+# ── Auth / JWT (non-secret config — keys come from Vault) ────────────────────────────────────
+auth:
+  jwt-issuer: http://localhost:8080
+  access-token-expiry-ms: 900000
+  refresh-token-expiry-ms: 604800000
+  max-login-attempts: 5
+  login-block-duration-minutes: 15
+  cache:
+    static-resources:
+      max-age-seconds: 31536000
+  cors:
+    allowed-origins:
+      - "http://localhost:3000"
+      - "http://localhost:4200"
+    allowed-methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "PATCH"
+      - "DELETE"
+      - "OPTIONS"
+    allowed-headers:
+      - "*"
+    allow-credentials: true
+    max-age: 3600
+  cookie:
+    access-token-name: access_token
+    refresh-token-name: refresh_token
+    domain: localhost
+    path: /
+    secure: false
+    http-only: true
+    access-token-max-age-seconds: 900
+    refresh-token-max-age-seconds: 604800

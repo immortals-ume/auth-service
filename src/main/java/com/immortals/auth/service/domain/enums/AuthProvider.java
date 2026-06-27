@@ -1,12 +1,18 @@
 package com.immortals.auth.service.domain.enums;
 
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-
-@Getter
-@RequiredArgsConstructor
 public enum AuthProvider {
-    FORM_LOGIN("formLogin");
+    FORM_LOGIN("formLogin"),
+    SERVICE2SERVICE("service2service"),
+    GMAIL("gmail"),
+    GITHUB("github");
 
     private final String provider;
+
+    AuthProvider(String provider) {
+        this.provider = provider;
+    }
+
+    public String getProvider() {
+        return provider;
+    }
 }

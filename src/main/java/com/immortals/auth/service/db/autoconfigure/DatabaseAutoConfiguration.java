@@ -1,15 +1,15 @@
 package com.immortals.auth.service.db.autoconfigure;
 
 import com.immortals.auth.service.db.config.DatabaseProperties;
-import com.immortals.auth.service.db.props.DbType;
 import com.immortals.auth.service.db.config.ReadDataSourceProperties;
 import com.immortals.auth.service.db.config.WriteDataSourceProperties;
+import com.immortals.auth.service.db.props.DbType;
 import com.immortals.auth.service.db.routing.RoutingDataSource;
 import com.immortals.auth.service.repository.AuthRepository;
 import com.immortals.auth.service.repository.RoleRepository;
 import com.zaxxer.hikari.HikariDataSource;
 import jakarta.persistence.EntityManagerFactory;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -18,6 +18,7 @@ import org.springframework.boot.jpa.EntityManagerFactoryBuilder;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.orm.jpa.JpaTransactionManager;
@@ -26,7 +27,6 @@ import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
-import org.springframework.beans.factory.annotation.Qualifier;
 
 import javax.sql.DataSource;
 import java.util.HashMap;
@@ -45,12 +45,18 @@ import java.util.Map;
         transactionManagerRef = "transactionManager"
 )
 @EntityScan("com.immortals.auth.service.domain")
-@RequiredArgsConstructor
-public  class DatabaseAutoConfiguration {
+
+public class DatabaseAutoConfiguration {
 
     private final WriteDataSourceProperties writeProps;
     private final ReadDataSourceProperties readProps;
     private final DatabaseProperties dbProps;
+
+    public DatabaseAutoConfiguration(WriteDataSourceProperties writeProps, ReadDataSourceProperties readProps, DatabaseProperties dbProps) {
+        this.writeProps = writeProps;
+        this.readProps = readProps;
+        this.dbProps = dbProps;
+    }
 
     @Bean(name = "writeDataSource")
     @ConditionalOnMissingBean(name = "writeDataSource")
@@ -116,13 +122,14 @@ public  class DatabaseAutoConfiguration {
 
         return new EntityManagerFactoryBuilder(
                 adapter,
-                dataSource -> buildJpaProperties(),
+                properties -> buildJpaProperties(),
                 null
         );
     }
 
     @Bean
     @Primary
+    @DependsOn("liquibase")
     public LocalContainerEntityManagerFactoryBean entityManagerFactory(
             EntityManagerFactoryBuilder builder,
             @Qualifier("dataSource") DataSource dataSource) {
@@ -141,6 +148,7 @@ public  class DatabaseAutoConfiguration {
             EntityManagerFactory emf) {
         return new JpaTransactionManager(emf);
     }
+
     private Map<String, Object> buildJpaProperties() {
         Map<String, Object> props = new HashMap<>();
 

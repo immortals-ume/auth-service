@@ -1,6 +1,8 @@
 package com.immortals.auth.service.security.jwt;
 
 import com.immortals.auth.service.security.UserPrincipal;
+import com.immortals.logging.api.ILogger;
+import com.immortals.logging.core.LogManager;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -9,14 +11,11 @@ import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import jakarta.annotation.PostConstruct;
-import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.Base64;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.interfaces.RSAPrivateKey;
@@ -29,10 +28,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 
 @Component
-@Slf4j
 public class JwtProvider {
+
+    private static final ILogger log = LogManager.getInstance().getLogger(JwtProvider.class);
 
     @Value("${jwt-private-key}")
     private String privateKeyPem;
@@ -40,18 +41,13 @@ public class JwtProvider {
     @Value("${jwt-public-key}")
     private String publicKeyPem;
 
-    @Getter
     @Value("${auth.access-token-expiry-ms}")
     private int jwtExpirationMs;
 
-    @Getter
     @Value("${auth.jwt-issuer}")
     private String jwtIssuer;
 
-    @Getter
     private RSAPrivateKey privateKey;
-
-    @Getter
     private RSAPublicKey publicKey;
 
     @PostConstruct
@@ -62,105 +58,118 @@ public class JwtProvider {
         log.info("JWT keys successfully initialized.");
     }
 
-    private RSAPrivateKey loadPrivateKeyFromPem(String pem) throws NoSuchAlgorithmException, InvalidKeySpecException {
-        log.debug("Loading RSA private key from PEM.");
+    private RSAPrivateKey loadPrivateKeyFromPem(String pem)
+            throws NoSuchAlgorithmException, InvalidKeySpecException {
         String key = pem.replace("-----BEGIN PRIVATE KEY-----", "")
                 .replace("-----END PRIVATE KEY-----", "")
                 .replaceAll("\\s+", "");
         byte[] decoded = Base64.decodeBase64(key);
-        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decoded);
-        KeyFactory kf = KeyFactory.getInstance("RSA");
-        return (RSAPrivateKey) kf.generatePrivate(spec);
+        return (RSAPrivateKey) KeyFactory.getInstance("RSA")
+                .generatePrivate(new PKCS8EncodedKeySpec(decoded));
     }
 
-    private RSAPublicKey loadPublicKeyFromPem(String pem) throws NoSuchAlgorithmException, InvalidKeySpecException {
-        log.debug("Loading RSA public key from PEM.");
+    private RSAPublicKey loadPublicKeyFromPem(String pem)
+            throws NoSuchAlgorithmException, InvalidKeySpecException {
         String key = pem.replace("-----BEGIN PUBLIC KEY-----", "")
                 .replace("-----END PUBLIC KEY-----", "")
                 .replaceAll("\\s+", "");
         byte[] decoded = Base64.decodeBase64(key);
-        X509EncodedKeySpec spec = new X509EncodedKeySpec(decoded);
-        KeyFactory kf = KeyFactory.getInstance("RSA");
-        return (RSAPublicKey) kf.generatePublic(spec);
+        return (RSAPublicKey) KeyFactory.getInstance("RSA")
+                .generatePublic(new X509EncodedKeySpec(decoded));
     }
 
-    public String generateAccessToken(Authentication authentication) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException, JOSEException {
+    public String generateAccessToken(Authentication authentication) throws JOSEException {
         log.info("Generating access token for user: {}", authentication.getName());
-        return getToken(authentication, jwtExpirationMs);
+        return buildToken(authentication, jwtExpirationMs);
     }
 
-    public String generateRefreshToken(Authentication authentication, Integer refreshExpiryTime) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException, JOSEException {
+    public String generateRefreshToken(Authentication authentication, Integer refreshExpiryMs)
+            throws JOSEException {
         log.info("Generating refresh token for user: {}", authentication.getName());
-        return getToken(authentication, refreshExpiryTime);
+        return buildToken(authentication, refreshExpiryMs);
     }
 
-    private String getToken(Authentication authentication, Integer expiryTime) throws JOSEException {
-        UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+    private String buildToken(Authentication authentication, int expiryMs) throws JOSEException {
+        UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
 
         Instant issuedAt = Instant.now();
-        Instant expiresAt = issuedAt.plusMillis(expiryTime);
+        Instant expiresAt = issuedAt.plusMillis(expiryMs);
 
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject(userPrincipal.getUsername())
-                .claim("userId", userPrincipal.getUserId())
-                .claim("email", userPrincipal.getEmail())
-                .claim("roles", userPrincipal.getAuthorities())
-                .claim("permissions", userPrincipal.getPermissions())
-                .expirationTime(Date.from(expiresAt))
+                .subject(principal.getUsername())
+                .jwtID(UUID.randomUUID().toString())      // required for blacklisting
+                .claim("userId", principal.getUserId())
+                .claim("email", principal.getEmail())
+                .claim("roles", principal.getAuthorities())
+                .claim("permissions", principal.getPermissions())
                 .issueTime(Date.from(issuedAt))
+                .expirationTime(Date.from(expiresAt))
                 .issuer(jwtIssuer)
                 .build();
 
-        SignedJWT signedJWT = new SignedJWT(new JWSHeader(JWSAlgorithm.RS256), claims);
+        SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.RS256), claims);
+        jwt.sign(new RSASSASigner(this.privateKey));      // fix: use instance field
 
-        RSASSASigner signer = new RSASSASigner(getPrivateKey());
-        signedJWT.sign(signer);
-
-        log.debug("Token generated for user: {} (exp: {})", userPrincipal.getUsername(), expiresAt);
-        return signedJWT.serialize();
+        log.debug("Token built for '{}' (exp: {})", principal.getUsername(), expiresAt);
+        return jwt.serialize();
     }
-
 
     public boolean validateToken(String token) {
         try {
-            SignedJWT signedJWT = SignedJWT.parse(token);
-            RSASSAVerifier verifier = new RSASSAVerifier(getPublicKey());
-            boolean valid = signedJWT.verify(verifier) && new Date().before(signedJWT.getJWTClaimsSet().getExpirationTime());
+            SignedJWT jwt = SignedJWT.parse(token);
+            boolean valid = jwt.verify(new RSASSAVerifier(this.publicKey))  // fix: use instance field
+                    && new Date().before(jwt.getJWTClaimsSet().getExpirationTime());
             log.debug("Token validation result: {}", valid);
             return valid;
         } catch (Exception e) {
-            log.error("Token validation failed: {}", e.getMessage(), e);
-            return Boolean.FALSE;
+            log.error("Token validation failed: {}", e.getMessage());
+            return false;
         }
     }
 
     public String getUsernameFromToken(String token) throws ParseException {
-        SignedJWT signedJWT = SignedJWT.parse(token);
-        String subject = signedJWT.getJWTClaimsSet().getSubject();
-        log.debug("Extracted subject from token: {}", subject);
-        return subject;
+        return SignedJWT.parse(token).getJWTClaimsSet().getSubject();
     }
 
     public JWTClaimsSet getClaimsFromToken(String token) throws ParseException {
-
-        SignedJWT signedJWT = SignedJWT.parse(token);
-        JWTClaimsSet claims = signedJWT.getJWTClaimsSet();
-        log.debug("Extracted claims from token for subject: {}", claims.getSubject());
-        return claims;
+        return SignedJWT.parse(token).getJWTClaimsSet();
     }
 
     public List<String> getPermissionsFromToken(String token) throws ParseException {
-        JWTClaimsSet claims = getClaimsFromToken(token);
-        List<String> permissions = claims.getClaim("permissions") != null ? (List<String>) claims.getClaim("permissions") : List.of();
-        log.debug("Extracted permissions from token: {}", permissions);
-        return permissions;
+        Object perms = getClaimsFromToken(token).getClaim("permissions");
+        return perms != null ? (List<String>) perms : List.of();
     }
 
     public Duration getExpiryTimeFromToken(String token) throws ParseException {
-        JWTClaimsSet claims = getClaimsFromToken(token);
-        Date exp = claims.getExpirationTime();
-        long ttl = exp.getTime() - System.currentTimeMillis();
-        log.debug("Token TTL (ms): {}", Math.max(ttl, 0));
+        long ttl = getClaimsFromToken(token).getExpirationTime().getTime()
+                - System.currentTimeMillis();
         return Duration.ofMillis(Math.max(ttl, 0));
+    }
+
+    /**
+     * Used by TokenBlacklistService on logout.
+     */
+    public String getJti(String token) {
+        try {
+            return getClaimsFromToken(token).getJWTID();
+        } catch (ParseException e) {
+            log.error("Failed to extract jti: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Used by TokenBlacklistService to set the blacklist entry TTL.
+     */
+    public long getExpiryEpochSecond(String token) {
+        try {
+            return getClaimsFromToken(token)
+                    .getExpirationTime()
+                    .toInstant()
+                    .getEpochSecond();
+        } catch (ParseException e) {
+            log.error("Failed to extract expiry epoch: {}", e.getMessage());
+            return 0L;
+        }
     }
 }

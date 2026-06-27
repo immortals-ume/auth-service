@@ -1,11 +1,16 @@
 package com.immortals.auth.service.controller.exception;
 
 import com.immortals.auth.service.domain.ApiResponse;
+import com.immortals.auth.service.service.exception.AuthenticationException;
+import com.immortals.auth.service.service.exception.DuplicateResourceException;
+import com.immortals.auth.service.service.exception.ResourceNotFoundException;
+import com.immortals.auth.service.service.exception.UserException;
+import com.immortals.logging.api.ILogger;
+import com.immortals.logging.core.LogManager;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import liquibase.exception.DatabaseException;
-import lombok.extern.slf4j.Slf4j;
 import org.hibernate.cache.CacheException;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.http.HttpStatus;
@@ -18,18 +23,17 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
 
-@Slf4j
+import static com.immortals.auth.service.constant.AuthConstants.CORRELATION_ID_HEADER;
+import static com.immortals.auth.service.constant.AuthConstants.GENERIC_ERROR_MESSAGE;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    private static final String GENERIC_ERROR_MESSAGE =
-            "Something went wrong. Please try again later.";
-
-    private static final String CORRELATION_ID_HEADER = "X-Correlation-Id";
-
+    private static final ILogger log = LogManager.getInstance().getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleMethodArgumentNotValid(
@@ -157,6 +161,22 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNoResource(
+            NoResourceFoundException ex,
+            HttpServletRequest request) {
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                ApiResponse.error(
+                        HttpStatus.NOT_FOUND.value(),
+                        HttpStatus.NOT_FOUND.getReasonPhrase(),
+                        "No resource found: " + ex.getResourcePath(),
+                        request.getRequestURI(),
+                        getCorrelationId(request)
+                )
+        );
+    }
+
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiResponse<Void>> handleMethodNotSupported(
             HttpRequestMethodNotSupportedException ex,
@@ -177,6 +197,74 @@ public class GlobalExceptionHandler {
         );
     }
 
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAuthenticationException(
+            AuthenticationException ex,
+            HttpServletRequest request) {
+
+        log.warn("Authentication error: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                ApiResponse.error(
+                        HttpStatus.UNAUTHORIZED.value(),
+                        HttpStatus.UNAUTHORIZED.getReasonPhrase(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        getCorrelationId(request)
+                )
+        );
+    }
+
+    @ExceptionHandler(UserException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUserException(
+            UserException ex,
+            HttpServletRequest request) {
+
+        log.warn("User error: {}", ex.getMessage());
+        return badRequest(
+                ApiResponse.error(
+                        HttpStatus.BAD_REQUEST.value(),
+                        HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        getCorrelationId(request)
+                )
+        );
+    }
+
+    @ExceptionHandler(DuplicateResourceException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDuplicateResource(
+            DuplicateResourceException ex,
+            HttpServletRequest request) {
+
+        log.warn("Duplicate resource: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                ApiResponse.error(
+                        HttpStatus.CONFLICT.value(),
+                        HttpStatus.CONFLICT.getReasonPhrase(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        getCorrelationId(request)
+                )
+        );
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleResourceNotFound(
+            ResourceNotFoundException ex,
+            HttpServletRequest request) {
+
+        log.warn("Resource not found: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                ApiResponse.error(
+                        HttpStatus.NOT_FOUND.value(),
+                        HttpStatus.NOT_FOUND.getReasonPhrase(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        getCorrelationId(request)
+                )
+        );
+    }
 
     @ExceptionHandler(CacheException.class)
     public ResponseEntity<ApiResponse<Void>> handleCacheException(

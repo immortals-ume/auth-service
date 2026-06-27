@@ -7,6 +7,7 @@ public record LoginRequestDto(
         String mobileNumber,
         String password,
         Boolean rememberMe,
-        String  authProvider
-) {}
+        String authProvider
+) {
+}
 

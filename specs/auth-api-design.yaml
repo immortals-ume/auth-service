@@ -1,0 +1,1109 @@
+openapi: 3.1.0
+
+info:
+  title: Auth Service API
+  description: |
+    Authentication and Authorization Service for Shopwire.
+
+    Provides JWT-based authentication (RSA-signed via nimbus-jose-jwt), RBAC with
+    roles and permissions, cookie-based token delivery, and token blacklisting.
+
+    ## Authentication
+    On a successful login, access and refresh tokens are returned **both** in the
+    response body **and** as `HttpOnly; Secure; SameSite=Strict` cookies.
+    - Browser clients: cookies are sent automatically.
+    - Non-browser clients: pass `Authorization: Bearer <access_token>`.
+
+    The `JwtAuthenticationFilter` accepts both sources; cookies take precedence.
+
+    ## Correlation IDs
+    Optionally include `X-Correlation-Id: <uuid>` in any request. The same value
+    is echoed back in every error response's `correlationId` field for tracing.
+
+    ## Platform Error Codes
+    Every error response carries an `errorCode` field:
+
+    | Prefix   | Meaning                          | Typical HTTP |
+    |----------|----------------------------------|-------------|
+    | `AUTH_*` | Authentication / token failure   | 401 / 403   |
+    | `VAL_*`  | Bean-validation error            | 400         |
+    | `RES_*`  | Resource not found / conflict    | 404 / 409   |
+    | `USER_*` | User-specific error              | 404 / 409   |
+    | `BUS_*`  | Business rule violation          | 422         |
+    | `TECH_*` | Infrastructure / DB error        | 500 / 503   |
+    | `SEC_*`  | Authorization / RBAC error       | 403         |
+  version: 1.0.0
+  contact:
+    name: immortals-ume
+    url: https://github.com/immortals-ume/auth-service
+  license:
+    name: Apache License 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.txt
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development
+  - url: /api/v1
+    description: Relative — use behind an API gateway
+
+tags:
+  - name: Authentication
+    description: Login and logout
+  - name: User
+    description: User self-registration
+  - name: Entitlements
+    description: |
+      Role and permission management.
+      Most operations require the `ADMIN` role; `GET /entitlements` is available
+      to any authenticated user (`USER` or `ADMIN`).
+
+paths:
+
+  # ── Auth ─────────────────────────────────────────────────────────────────────
+
+  /auth/login:
+    post:
+      tags: [ Authentication ]
+      summary: Login
+      operationId: login
+      description: |
+        Authenticates a user. At least one of `userName`, `email`, or
+        `mobileNumber` must be supplied along with `password`.
+
+        On success, `HttpOnly; Secure; SameSite=Strict` cookies named
+        `access_token` and `refresh_token` are set on the response. The same
+        token strings are also present in the body for non-browser clients.
+      security: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              byUsername:
+                summary: Login with username
+                value:
+                  userName: johndoe
+                  password: "P@ssw0rd1!"
+                  rememberMe: false
+              byEmail:
+                summary: Login with email
+                value:
+                  email: john.doe@example.com
+                  password: "P@ssw0rd1!"
+                  rememberMe: true
+              socialLogin:
+                summary: Social / OAuth2 login
+                value:
+                  email: john.doe@example.com
+                  password: ""
+                  authProvider: GOOGLE
+      responses:
+        '200':
+          description: Authentication successful
+          headers:
+            Set-Cookie:
+              description: |
+                Sets two cookies — `access_token` (short-lived) and
+                `refresh_token` (long-lived). Both are `HttpOnly; Secure;
+                SameSite=Strict`.
+              schema:
+                type: string
+                example: "access_token=eyJ...; Path=/; HttpOnly; Secure; SameSite=Strict"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              example:
+                username: johndoe
+                accessToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+                refreshToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+                message: Login successful
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/logout:
+    post:
+      tags: [ Authentication ]
+      summary: Logout
+      operationId: logout
+      description: |
+        Blacklists the current access token (in-memory `ConcurrentHashMap`) and
+        clears the auth cookies by setting `Max-Age=0`.
+
+        Supply either the `access_token` cookie (browser) or the
+        `Authorization: Bearer` header (API client).
+      security:
+        - cookieAuth: [ ]
+        - bearerAuth: [ ]
+      responses:
+        '204':
+          description: Logged out. Auth cookies are expired.
+          headers:
+            Set-Cookie:
+              description: Cookie cleared with Max-Age=0
+              schema:
+                type: string
+                example: "access_token=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ── User ─────────────────────────────────────────────────────────────────────
+
+  /user/register:
+    post:
+      tags: [ User ]
+      summary: Register a new user
+      operationId: register
+      description: |
+        Creates a new user account. No authentication required.
+
+        **Password rules** (enforced by `@Pattern`):
+        - 8 – 64 characters
+        - At least one uppercase letter
+        - At least one lowercase letter
+        - At least one digit
+        - At least one special character from `@$!%*?&`
+
+        **Contact number**: Indian mobile format — `[6-9]\d{9}` optionally
+        prefixed with `+91`.
+      security: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              firstName: John
+              middleName: Michael
+              lastName: Doe
+              userName: johndoe
+              email: john.doe@example.com
+              password: "P@ssw0rd1!"
+              retypedPassword: "P@ssw0rd1!"
+              phoneCode: "+91"
+              contactNumber: "9876543210"
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_RegisterResponse'
+              example:
+                status: 200
+                statusText: OK
+                success: true
+                data:
+                  userId: 1
+                  username: johndoe
+                  message: User registered successfully
+                message: null
+                errorCode: SUCCESS_001
+                path: null
+                timestamp: "2026-06-14T11:45:00Z"
+                correlationId: null
+                validationErrors: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ── Entitlements ─────────────────────────────────────────────────────────────
+
+  /entitlements:
+    get:
+      tags: [ Entitlements ]
+      summary: Get roles for the current user
+      operationId: getRolesForUser
+      description: |
+        Returns the roles assigned to the currently authenticated user.
+        Accessible by `USER` and `ADMIN` roles.
+      security:
+        - cookieAuth: [ ]
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: User's roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleResponse'
+              example:
+                - id: 1
+                  name: USER
+                  description: Standard user role
+                  permissions: [ "READ_PROFILE" ]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /entitlements/create:
+    post:
+      tags: [ Entitlements ]
+      summary: Create a role
+      operationId: createRole
+      description: |
+        Creates a new role. `roleName` must be unique and ≤ 20 characters.
+
+        **Requires**: `ADMIN` role.
+      security:
+        - cookieAuth: [ ]
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
+            example:
+              roleName: MANAGER
+              description: "Manager role with limited admin privileges"
+              activeInd: true
+      responses:
+        '201':
+          description: Role created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleResponse'
+              example:
+                id: 5
+                name: MANAGER
+                description: Manager role with limited admin privileges
+                permissions: [ ]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /entitlements/roles:
+    get:
+      tags: [ Entitlements ]
+      summary: Get all roles
+      operationId: getRoles
+      description: |
+        Returns every role in the system with their associated permissions.
+
+        **Requires**: `ADMIN` role.
+      security:
+        - cookieAuth: [ ]
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: All roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /entitlements/roles/{roleId}:
+    delete:
+      tags: [ Entitlements ]
+      summary: Delete a role
+      operationId: deleteRole
+      description: |
+        Permanently deletes a role by ID.
+
+        **Requires**: `ADMIN` role.
+      security:
+        - cookieAuth: [ ]
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/roleId'
+      responses:
+        '204':
+          description: Role deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /entitlements/roles/{roleId}/permissions/{permissionId}:
+    delete:
+      tags: [ Entitlements ]
+      summary: Remove a permission from a role
+      operationId: removePermissionFromRole
+      description: |
+        Unlinks a permission from a role (does not delete either entity).
+
+        **Requires**: `ADMIN` role.
+      security:
+        - cookieAuth: [ ]
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/roleId'
+        - $ref: '#/components/parameters/permissionId'
+      responses:
+        '204':
+          description: Permission unlinked from role
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /entitlements/permissions:
+    get:
+      tags: [ Entitlements ]
+      summary: Get all permissions
+      operationId: getPermissions
+      description: |
+        Returns every permission defined in the system.
+
+        **Requires**: `ADMIN` role.
+      security:
+        - cookieAuth: [ ]
+        - bearerAuth: [ ]
+      responses:
+        '200':
+          description: All permissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PermissionResponse'
+              example:
+                - id: 1
+                  name: READ_ORDERS
+                  description: Allows reading order data
+                - id: 2
+                  name: WRITE_ORDERS
+                  description: Allows creating or modifying orders
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [ Entitlements ]
+      summary: Create a permission
+      operationId: createPermission
+      description: |
+        Creates a new permission. `name` must be unique.
+
+        **Requires**: `ADMIN` role.
+      security:
+        - cookieAuth: [ ]
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePermissionRequest'
+            example:
+              name: READ_ORDERS
+              description: "Allows reading order data"
+      responses:
+        '201':
+          description: Permission created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionResponse'
+              example:
+                id: 7
+                name: READ_ORDERS
+                description: Allows reading order data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /entitlements/permissions/{permissionId}:
+    delete:
+      tags: [ Entitlements ]
+      summary: Delete a permission
+      operationId: deletePermission
+      description: |
+        Permanently deletes a permission by ID.
+
+        **Requires**: `ADMIN` role.
+      security:
+        - cookieAuth: [ ]
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/permissionId'
+      responses:
+        '204':
+          description: Permission deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /entitlements/assign-roles:
+    post:
+      tags: [ Entitlements ]
+      summary: Assign a role to a user
+      operationId: assignRolesToUser
+      description: |
+        Links an existing role to an existing user.
+
+        **Requires**: `ADMIN` role.
+      security:
+        - cookieAuth: [ ]
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRoleRequest'
+            example:
+              userId: 42
+              roleId: 3
+      responses:
+        '200':
+          description: Role assigned
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /entitlements/assign-permissions:
+    post:
+      tags: [ Entitlements ]
+      summary: Assign a permission to a role
+      operationId: assignPermissionsToRoles
+      description: |
+        Links an existing permission to an existing role.
+
+        **Requires**: `ADMIN` role.
+      security:
+        - cookieAuth: [ ]
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignPermissionRequest'
+            example:
+              roleId: 3
+              permissionId: 7
+      responses:
+        '200':
+          description: Permission assigned to role
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /entitlements/users/{userId}/roles/{roleId}:
+    delete:
+      tags: [ Entitlements ]
+      summary: Remove a role from a user
+      operationId: removeRoleFromUser
+      description: |
+        Unlinks a role from a user (does not delete either entity).
+
+        **Requires**: `ADMIN` role.
+      security:
+        - cookieAuth: [ ]
+        - bearerAuth: [ ]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: ID of the user
+          example: 42
+        - $ref: '#/components/parameters/roleId'
+      responses:
+        '204':
+          description: Role removed from user
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        RSA-signed JWT (RS256) in the `Authorization: Bearer <token>` header.
+        Obtain a token via `POST /auth/login`.
+
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: |
+        `HttpOnly; Secure; SameSite=Strict` cookie set automatically by the browser
+        after `POST /auth/login`. No explicit header needed in a browser context.
+
+  parameters:
+    roleId:
+      name: roleId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        example: 3
+      description: Unique role identifier
+
+    permissionId:
+      name: permissionId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        example: 7
+      description: Unique permission identifier
+
+  schemas:
+
+    # ── Request bodies ────────────────────────────────────────────────────────
+
+    LoginRequest:
+      type: object
+      description: |
+        At least one identity field (`userName`, `email`, or `mobileNumber`)
+        must be provided together with `password`.
+      properties:
+        userName:
+          type: string
+          description: Username (mutually exclusive with `email` / `mobileNumber`)
+          example: johndoe
+        email:
+          type: string
+          format: email
+          description: Email address
+          example: john.doe@example.com
+        mobileNumber:
+          type: string
+          description: Mobile number
+          example: "9876543210"
+        password:
+          type: string
+          format: password
+          description: Account password
+          example: "P@ssw0rd1!"
+        rememberMe:
+          type: boolean
+          description: Extend token TTL when true
+          default: false
+        authProvider:
+          type: string
+          description: |
+            OAuth2 provider for social login. Omit (or use `LOCAL`) for
+            standard credential-based login.
+          example: LOCAL
+          enum: [ LOCAL, GOOGLE, GITHUB ]
+      required:
+        - password
+
+    RegisterRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+          description: Given name
+          example: John
+        middleName:
+          type: string
+          description: Middle name (optional)
+          example: Michael
+        lastName:
+          type: string
+          description: Family name
+          example: Doe
+        userName:
+          type: string
+          minLength: 3
+          maxLength: 16
+          description: Unique login handle (3–16 characters)
+          example: johndoe
+        email:
+          type: string
+          format: email
+          description: Valid email address
+          example: john.doe@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 64
+          pattern: '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,64}$'
+          description: |
+            8–64 characters; must include at least one uppercase, one lowercase,
+            one digit, and one special character from `@$!%*?&`.
+          example: "P@ssw0rd1!"
+        retypedPassword:
+          type: string
+          format: password
+          description: Must match `password`
+          example: "P@ssw0rd1!"
+        phoneCode:
+          type: string
+          description: Country dialing code
+          example: "+91"
+        contactNumber:
+          type: string
+          pattern: '^(\+91)?[6-9][0-9]{9}$'
+          description: Indian mobile number (optional `+91` prefix)
+          example: "9876543210"
+      required:
+        - firstName
+        - lastName
+        - userName
+        - email
+        - password
+        - retypedPassword
+        - phoneCode
+
+    CreateRoleRequest:
+      type: object
+      description: Payload to create a new role.
+      properties:
+        roleName:
+          type: string
+          maxLength: 20
+          description: Unique role name (≤ 20 characters)
+          example: MANAGER
+        description:
+          type: string
+          maxLength: 200
+          description: Human-readable description
+          example: "Manager role with limited admin privileges"
+        activeInd:
+          type: boolean
+          description: Whether the role is active
+          example: true
+      required:
+        - roleName
+        - activeInd
+
+    CreatePermissionRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Unique permission name
+          example: READ_ORDERS
+        description:
+          type: string
+          description: Human-readable description (optional)
+          example: "Allows reading order data"
+      required:
+        - name
+
+    AssignRoleRequest:
+      type: object
+      properties:
+        userId:
+          type: integer
+          format: int64
+          description: ID of the target user
+          example: 42
+        roleId:
+          type: integer
+          format: int64
+          description: ID of the role to assign
+          example: 3
+      required:
+        - userId
+        - roleId
+
+    AssignPermissionRequest:
+      type: object
+      properties:
+        roleId:
+          type: integer
+          format: int64
+          description: ID of the target role
+          example: 3
+        permissionId:
+          type: integer
+          format: int64
+          description: ID of the permission to assign
+          example: 7
+      required:
+        - roleId
+        - permissionId
+
+    # ── Response bodies ───────────────────────────────────────────────────────
+
+    LoginResponse:
+      type: object
+      description: Successful authentication payload
+      properties:
+        username:
+          type: string
+          example: johndoe
+        accessToken:
+          type: string
+          description: Short-lived RSA-signed JWT (RS256)
+          example: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+        refreshToken:
+          type: string
+          description: Long-lived refresh JWT
+          example: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+        message:
+          type: string
+          example: Login successful
+
+    RegisterResponse:
+      type: object
+      description: New user registration confirmation
+      properties:
+        userId:
+          type: integer
+          format: int64
+          description: Generated user ID
+          example: 1
+        username:
+          type: string
+          example: johndoe
+        message:
+          type: string
+          example: User registered successfully
+
+    RoleResponse:
+      type: object
+      description: Role with its associated permission names
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: ADMIN
+        description:
+          type: string
+          example: Full administrative access
+        permissions:
+          type: array
+          description: Set of permission names linked to this role
+          items:
+            type: string
+          example: [ "READ_ORDERS", "WRITE_ORDERS", "MANAGE_USERS" ]
+
+    PermissionResponse:
+      type: object
+      description: A single permission
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 7
+        name:
+          type: string
+          example: READ_ORDERS
+        description:
+          type: string
+          example: "Allows reading order data"
+
+    # ── Envelope schemas ──────────────────────────────────────────────────────
+
+    ApiResponse_RegisterResponse:
+      type: object
+      description: |
+        Standard `ApiResponse<RegisterResponse>` envelope returned by
+        `POST /user/register`.
+      properties:
+        status:
+          type: integer
+          description: HTTP status code
+          example: 200
+        statusText:
+          type: string
+          example: OK
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/RegisterResponse'
+        message:
+          type: string
+          nullable: true
+          example: null
+        errorCode:
+          type: string
+          nullable: true
+          example: SUCCESS_001
+        path:
+          type: string
+          nullable: true
+          example: null
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-06-14T11:45:00Z"
+        correlationId:
+          type: string
+          nullable: true
+          example: null
+        validationErrors:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          example: null
+
+    ErrorResponse:
+      type: object
+      description: Standard error envelope returned for all 4xx / 5xx responses
+      properties:
+        status:
+          type: integer
+          description: HTTP status code
+          example: 400
+        statusText:
+          type: string
+          example: Bad Request
+        success:
+          type: boolean
+          example: false
+        data:
+          nullable: true
+          example: null
+        message:
+          type: string
+          description: Human-readable summary
+          example: Validation failed
+        errorCode:
+          type: string
+          nullable: true
+          description: |
+            Platform error code. See the `ErrorCode` class for the full registry.
+
+            **2xx** — `SUCCESS_001` … `SUCCESS_005`
+            **Auth** — `AUTH_001` (invalid credentials), `AUTH_002` (token expired),
+            `AUTH_003` (access denied), `AUTH_004` (account locked),
+            `AUTH_005` (invalid token)
+            **Validation** — `VAL_001` … `VAL_004`
+            **Resource** — `RES_001` (not found), `RES_002` / `RES_003` (conflict),
+            `RES_004` (gone)
+            **User** — `USER_001` (not found), `USER_002` (already exists),
+            `USER_003` (inactive), `USER_004` (invalid operation)
+            **Business** — `BUS_001` … `BUS_004`
+            **Technical** — `TECH_001` … `TECH_005`
+            **Security** — `SEC_001` … `SEC_003`
+          example: VAL_003
+        path:
+          type: string
+          nullable: true
+          description: Request URI that triggered the error
+          example: /api/v1/user/register
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-06-14T11:45:00Z"
+        correlationId:
+          type: string
+          nullable: true
+          description: Echoed from `X-Correlation-Id` request header
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        validationErrors:
+          type: array
+          nullable: true
+          description: Per-field details; only present for validation errors
+          items:
+            $ref: '#/components/schemas/ValidationError'
+
+    ValidationError:
+      type: object
+      description: Per-field validation failure detail inside `ErrorResponse`
+      properties:
+        field:
+          type: string
+          description: Name of the failing field
+          example: email
+        rejectedValue:
+          nullable: true
+          description: The value that was rejected
+          example: "not-an-email"
+        message:
+          type: string
+          description: Human-readable constraint message
+          example: Email is not in correct format
+        code:
+          type: string
+          nullable: true
+          description: Constraint annotation name (e.g. `Email`, `NotBlank`)
+          example: Email
+
+  responses:
+
+    BadRequest:
+      description: |
+        **400 Bad Request** — request body failed bean validation or a parameter
+        has the wrong type. The `validationErrors` array contains per-field details.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            status: 400
+            statusText: Bad Request
+            success: false
+            data: null
+            message: Validation failed
+            errorCode: VAL_003
+            path: /api/v1/user/register
+            timestamp: "2026-06-14T11:45:00Z"
+            correlationId: null
+            validationErrors:
+              - field: email
+                rejectedValue: "bad-email"
+                message: Email is not in correct format
+                code: Email
+              - field: password
+                rejectedValue: "short"
+                message: "Password must be 8–64 characters and contain at least one uppercase letter, one lowercase letter, one digit, and one special character (@$!%*?&)"
+                code: Pattern
+
+    Unauthorized:
+      description: |
+        **401 Unauthorized** — no token supplied, token is expired, or credentials
+        are incorrect. Error code is one of `AUTH_001` – `AUTH_005`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            status: 401
+            statusText: Unauthorized
+            success: false
+            data: null
+            message: Invalid credentials
+            errorCode: AUTH_001
+            path: /api/v1/auth/login
+            timestamp: "2026-06-14T11:45:00Z"
+            correlationId: null
+            validationErrors: null
+
+    Forbidden:
+      description: |
+        **403 Forbidden** — authenticated but lacks the required role or permission.
+        Error code is one of `AUTH_003`, `SEC_001` – `SEC_003`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            status: 403
+            statusText: Forbidden
+            success: false
+            data: null
+            message: Access denied
+            errorCode: SEC_001
+            path: /api/v1/entitlements/create
+            timestamp: "2026-06-14T11:45:00Z"
+            correlationId: null
+            validationErrors: null
+
+    NotFound:
+      description: |
+        **404 Not Found** — the addressed resource does not exist.
+        Error code is `RES_001` or `USER_001`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            status: 404
+            statusText: Not Found
+            success: false
+            data: null
+            message: Role not found
+            errorCode: RES_001
+            path: /api/v1/entitlements/roles/999
+            timestamp: "2026-06-14T11:45:00Z"
+            correlationId: null
+            validationErrors: null
+
+    Conflict:
+      description: |
+        **409 Conflict** — a resource with the same unique key already exists.
+        Error code is `RES_002`, `RES_003`, or `USER_002`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            status: 409
+            statusText: Conflict
+            success: false
+            data: null
+            message: User already exists
+            errorCode: USER_002
+            path: /api/v1/user/register
+            timestamp: "2026-06-14T11:45:00Z"
+            correlationId: null
+            validationErrors: null
+
+    InternalServerError:
+      description: |
+        **500 Internal Server Error** — unhandled exception, database error, or
+        infrastructure failure. Error code is one of `TECH_001` – `TECH_004`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            status: 500
+            statusText: Internal Server Error
+            success: false
+            data: null
+            message: Something went wrong. Please try again later.
+            errorCode: TECH_004
+            path: /api/v1/auth/login
+            timestamp: "2026-06-14T11:45:00Z"
+            correlationId: null
+            validationErrors: null

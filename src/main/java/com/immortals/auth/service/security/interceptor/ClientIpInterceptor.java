@@ -4,7 +4,6 @@ package com.immortals.auth.service.security.interceptor;
 import com.immortals.auth.service.context.RequestContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -12,7 +11,6 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import static com.immortals.auth.service.constant.AuthConstants.MDC_USER_AGENT_KEY;
 
 @Component
-@Slf4j
 public class ClientIpInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {

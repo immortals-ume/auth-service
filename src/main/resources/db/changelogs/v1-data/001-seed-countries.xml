@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="v1-data-001-countries" author="immortals-ume">
+        <insert tableName="countries" schemaName="user_auth">
+            <column name="id"           valueSequenceNext="countries_seq"/>
+            <column name="version"      valueNumeric="0"/>
+            <column name="country_name" value="India"/>
+            <column name="country_code" value="IN"/>
+            <column name="active_ind"   valueBoolean="true"/>
+            <column name="created_by"   value="system"/>
+            <column name="created_date" valueDate="now()"/>
+        </insert>
+
+        <rollback>
+            <delete tableName="countries" schemaName="user_auth">
+                <where>country_code = 'IN'</where>
+            </delete>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

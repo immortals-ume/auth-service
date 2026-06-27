@@ -1,22 +1,21 @@
 package com.immortals.auth.service.domain.entity;
 
 
-import com.immortals.auth.service.audit.Auditable;
-import com.immortals.auth.service.domain.user.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.immortals.auth.service.domain.Auditable;
+import com.immortals.auth.service.domain.helpers.AddressStatus;
+import com.immortals.auth.service.domain.helpers.AddressType;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import net.minidev.json.annotate.JsonIgnore;
 import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
 
 import java.math.BigDecimal;
 
 @Entity
+@SequenceGenerator(name = "id_seq", sequenceName = "user_address_seq", schema = "user_auth", allocationSize = 50)
 @Table(
         name = "user_address",
         schema = "user_auth",
@@ -31,10 +30,6 @@ import java.math.BigDecimal;
                 @UniqueConstraint(name = "uk_user_address_uuid", columnNames = "address_uuid")
         }
 )
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
 @Audited
 public class UserAddress extends Auditable {
 
@@ -98,6 +93,7 @@ public class UserAddress extends Auditable {
     @Column(name = "longitude", precision = 10, scale = 7)
     private BigDecimal longitude;
 
+    @NotAudited
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
@@ -109,7 +105,7 @@ public class UserAddress extends Auditable {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "state_id", nullable = false)
-    private States states;
+    private State state;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "city_id", nullable = false)

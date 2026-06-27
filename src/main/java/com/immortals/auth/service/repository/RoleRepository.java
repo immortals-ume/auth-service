@@ -15,6 +15,10 @@ import java.util.Optional;
 public interface RoleRepository extends JpaRepository<Roles, Long> {
 
     @Lock(LockModeType.PESSIMISTIC_READ)
-    @Query("SELECT u FROM Roles u JOIN FETCH u.permissions WHERE u.roleId = :id")
+    @Query("SELECT u FROM Roles u JOIN FETCH u.permissions WHERE u.id = :id")
     Optional<Roles> findByIdWithPermissions(@Param("id") Long id);
+
+    Optional<Roles> findByRoleName(String roleName);
+
+    boolean existsByRoleName(String roleName);
 }

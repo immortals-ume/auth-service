@@ -4,7 +4,7 @@ import com.immortals.auth.service.db.context.DbContextHolder;
 import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
 
 /**
- * Spring datasource router that dynamically selects between read and write datasources
+ * Spring datasource router that dynamically selects between read and write datasource
  * based on the current thread-local database context.
  * <p>
  * This class extends Spring's AbstractRoutingDataSource and uses DbContextHolder

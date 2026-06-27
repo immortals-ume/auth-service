@@ -1,6 +1,5 @@
 # Auth App — Authentication & Authorization Service
 
-
 A robust, scalable authentication and authorization microservice built with Spring Boot, designed to provide secure
 access control for modern distributed systems.
 

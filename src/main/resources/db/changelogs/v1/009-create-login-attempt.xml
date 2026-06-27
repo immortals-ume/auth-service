@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="v1-009-login-attempt" author="immortals-ume">
+        <createTable tableName="login_attempt" schemaName="user_auth">
+            <!-- BaseEntity -->
+            <column name="id"              type="BIGINT"        defaultValueComputed="nextval('user_auth.login_attempt_seq')"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="version"         type="BIGINT"        defaultValueNumeric="0"><constraints nullable="false"/></column>
+            <!-- Attempt details -->
+            <column name="username"        type="VARCHAR(100)"><constraints nullable="false"/></column>
+            <column name="ip_address"      type="VARCHAR(45)"/>
+            <column name="user_agent"      type="VARCHAR(500)"/>
+            <column name="failed_attempts" type="BIGINT"        defaultValueNumeric="0"><constraints nullable="false"/></column>
+            <!-- Block state -->
+            <column name="account_blocked" type="BOOLEAN"       defaultValueBoolean="false"><constraints nullable="false"/></column>
+            <column name="blocked_at"      type="TIMESTAMP"/>
+            <column name="block_expires_at" type="TIMESTAMP"/>
+            <!-- Timestamps -->
+            <column name="last_attempt_at"  type="TIMESTAMP"><constraints nullable="false"/></column>
+            <column name="last_success_at"  type="TIMESTAMP"/>
+            <column name="active_ind"       type="BOOLEAN"      defaultValueBoolean="true"><constraints nullable="false"/></column>
+            <!-- Auditable -->
+            <column name="created_by"       type="VARCHAR(255)"><constraints nullable="false"/></column>
+            <column name="created_date"     type="TIMESTAMP"><constraints nullable="false"/></column>
+            <column name="updated_by"       type="VARCHAR(255)"/>
+            <column name="updated_date"     type="TIMESTAMP"/>
+            <column name="deleted_by"       type="VARCHAR(255)"/>
+            <column name="deleted_date"     type="TIMESTAMP"/>
+        </createTable>
+
+        <createIndex indexName="idx_login_attempt_username"   tableName="login_attempt" schemaName="user_auth"><column name="username"/></createIndex>
+        <createIndex indexName="idx_login_attempt_ip"         tableName="login_attempt" schemaName="user_auth"><column name="ip_address"/></createIndex>
+        <createIndex indexName="idx_login_attempt_blocked"    tableName="login_attempt" schemaName="user_auth"><column name="account_blocked"/></createIndex>
+        <createIndex indexName="idx_login_attempt_last_time"  tableName="login_attempt" schemaName="user_auth"><column name="last_attempt_at"/></createIndex>
+
+        <rollback>
+            <dropTable tableName="login_attempt" schemaName="user_auth" cascadeConstraints="true"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

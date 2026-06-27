@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <include file="db/changelogs/v1/001-create-schemas.xml"/>
+    <include file="db/changelogs/v1/002-create-sequences.xml"/>
+    <include file="db/changelogs/v1/003-create-countries.xml"/>
+    <include file="db/changelogs/v1/004-create-states.xml"/>
+    <include file="db/changelogs/v1/005-create-cities.xml"/>
+    <include file="db/changelogs/v1/006-create-users.xml"/>
+    <include file="db/changelogs/v1/007-create-roles.xml"/>
+    <include file="db/changelogs/v1/008-create-permissions.xml"/>
+    <include file="db/changelogs/v1/009-create-login-attempt.xml"/>
+    <include file="db/changelogs/v1/010-create-user-address.xml"/>
+    <include file="db/changelogs/v1/011-create-join-tables.xml"/>
+    <include file="db/changelogs/v1/012-create-envers-tables.xml"/>
+    <include file="db/changelogs/v1/013-create-user-session.xml"/>
+    <include file="db/changelogs/v1/014-create-system-audit.xml"/>
+    <include file="db/changelogs/v1/015-fix-envers-columns.xml"/>
+    <include file="db/changelogs/v1/016-create-verification-tokens.xml"/>
+    <include file="db/changelogs/v1/020-create-audit-log.xml"/>
+    <include file="db/changelogs/v1-data/001-seed-countries.xml"/>
+    <include file="db/changelogs/v1-data/002-seed-states.xml"/>
+    <include file="db/changelogs/v1-data/003-seed-cities.xml"/>
+    <include file="db/changelogs/v1-data/004-seed-default-roles.xml"/>
+    <include file="db/changelogs/v1-data/005-seed-default-users.xml"/>
+
+</databaseChangeLog>
