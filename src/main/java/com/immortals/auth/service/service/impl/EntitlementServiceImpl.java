@@ -1,4 +1,3 @@
-// EntitlementServiceImpl.java
 package com.immortals.auth.service.service.impl;
 
 import com.immortals.auth.service.db.annotation.ReadOnly;
@@ -24,7 +23,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-
 @Service
 public class EntitlementServiceImpl implements EntitlementService {
 
@@ -43,12 +41,17 @@ public class EntitlementServiceImpl implements EntitlementService {
     @WriteOnly
     @Override
     @Transactional
-    public RoleResponseDto create(Roles roles) {
-        if (rolesRepository.existsByRoleName(roles.getRoleName())) {
+    public RoleResponseDto create(CreateRoleRequest request) {
+        if (rolesRepository.existsByRoleName(request.roleName())) {
             throw new DuplicateResourceException(
-                    "Role already exists: " + roles.getRoleName());
+                    "Role already exists: " + request.roleName());
         }
-        Roles saved = rolesRepository.save(roles);
+        Roles role = Roles.builder()
+                .roleName(request.roleName())
+                .description(request.description())
+                .activeInd(true)
+                .build();
+        Roles saved = rolesRepository.save(role);
         log.info("Role created: {}", saved.getRoleName());
         return new RoleResponseDto(saved.getId(), saved.getRoleName(), saved.getDescription(), Set.of());
     }
@@ -108,7 +111,6 @@ public class EntitlementServiceImpl implements EntitlementService {
     public void deletePermission(Long permissionId) {
         Permissions permission = findPermissionOrThrow(permissionId);
 
-        // Detach from all roles first
         permission.getRoles().forEach(role -> role.getPermissions().remove(permission));
         permission.getRoles().clear();
 
@@ -180,7 +182,6 @@ public class EntitlementServiceImpl implements EntitlementService {
                 permission.getName(), role.getRoleName());
     }
 
-
     @WriteOnly
     @Override
     @Transactional
@@ -196,7 +197,6 @@ public class EntitlementServiceImpl implements EntitlementService {
         log.info("Permission '{}' removed from role '{}'",
                 permission.getName(), role.getRoleName());
     }
-
 
     private Roles findRoleOrThrow(Long id) {
         return rolesRepository.findById(id)
@@ -231,3 +231,4 @@ public class EntitlementServiceImpl implements EntitlementService {
         return new PermissionResponseDto(p.getId(), p.getName(), p.getDescription());
     }
 }
+

@@ -1,15 +1,12 @@
 package com.immortals.auth.service.domain.entity;
 
 import jakarta.persistence.*;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @MappedSuperclass
-@EntityListeners(AuditingEntityListener.class)
 public abstract class BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "id_seq")
-    @SequenceGenerator(name = "id_seq", sequenceName = "id_seq", schema = "user_auth", allocationSize = 50)
     private Long id;
 
     @Version

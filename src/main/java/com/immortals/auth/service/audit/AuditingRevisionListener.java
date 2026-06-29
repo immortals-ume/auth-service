@@ -17,6 +17,12 @@ public class AuditingRevisionListener implements RevisionListener {
     public void newRevision(Object revisionEntity) {
         AuditingRevisionEntity entity = (AuditingRevisionEntity) revisionEntity;
         entity.setUsername(resolveUser());
+
+        AuditRequestContext ctx = AuditRequestContext.current();
+        if (ctx != null) {
+            entity.setIpAddress(ctx.getIpAddress());
+            entity.setUserAgent(ctx.getUserAgent());
+        }
     }
 
     private String resolveUser() {

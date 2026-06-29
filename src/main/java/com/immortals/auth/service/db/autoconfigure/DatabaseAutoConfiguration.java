@@ -1,8 +1,8 @@
 package com.immortals.auth.service.db.autoconfigure;
 
-import com.immortals.auth.service.db.config.DatabaseProperties;
-import com.immortals.auth.service.db.config.ReadDataSourceProperties;
-import com.immortals.auth.service.db.config.WriteDataSourceProperties;
+import com.immortals.auth.service.config.DatabaseProperties;
+import com.immortals.auth.service.config.ReadDataSourceProperties;
+import com.immortals.auth.service.config.WriteDataSourceProperties;
 import com.immortals.auth.service.db.props.DbType;
 import com.immortals.auth.service.db.routing.RoutingDataSource;
 import com.immortals.auth.service.repository.AuthRepository;
@@ -12,7 +12,6 @@ import jakarta.persistence.EntityManagerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.boot.jpa.EntityManagerFactoryBuilder;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
@@ -35,11 +34,6 @@ import java.util.Map;
 @Configuration
 @ConditionalOnClass(DataSource.class)
 @EnableTransactionManagement
-@EnableConfigurationProperties({
-        ReadDataSourceProperties.class,
-        WriteDataSourceProperties.class,
-        DatabaseProperties.class
-})
 @EnableJpaRepositories(
         basePackageClasses = {AuthRepository.class, RoleRepository.class}, entityManagerFactoryRef = "entityManagerFactory",
         transactionManagerRef = "transactionManager"
@@ -61,28 +55,40 @@ public class DatabaseAutoConfiguration {
     @Bean(name = "writeDataSource")
     @ConditionalOnMissingBean(name = "writeDataSource")
     public DataSource writeDataSource() {
-        return DataSourceBuilder.create()
+        HikariDataSource ds = DataSourceBuilder.create()
                 .type(HikariDataSource.class)
                 .url(writeProps.getUrl())
                 .username(writeProps.getUsername())
                 .password(writeProps.getPassword())
                 .driverClassName(writeProps.getDriverClassName())
                 .build();
+        ds.setPoolName(writeProps.getPoolName());
+        ds.setMaximumPoolSize(writeProps.getMaximumPoolSize());
+        ds.setMinimumIdle(writeProps.getMinimumIdle());
+        ds.setConnectionTimeout(writeProps.getConnectionTimeout());
+        ds.setIdleTimeout(writeProps.getIdleTimeout());
+        ds.setMaxLifetime(writeProps.getMaxLifetime());
+        return ds;
     }
-
 
     @Bean(name = "readDataSource")
     @ConditionalOnMissingBean(name = "readDataSource")
     public DataSource readDataSource() {
-        return DataSourceBuilder.create()
+        HikariDataSource ds = DataSourceBuilder.create()
                 .type(HikariDataSource.class)
                 .url(readProps.getUrl())
                 .username(readProps.getUsername())
                 .password(readProps.getPassword())
                 .driverClassName(readProps.getDriverClassName())
                 .build();
+        ds.setPoolName(readProps.getPoolName());
+        ds.setMaximumPoolSize(readProps.getMaximumPoolSize());
+        ds.setMinimumIdle(readProps.getMinimumIdle());
+        ds.setConnectionTimeout(readProps.getConnectionTimeout());
+        ds.setIdleTimeout(readProps.getIdleTimeout());
+        ds.setMaxLifetime(readProps.getMaxLifetime());
+        return ds;
     }
-
 
     @Bean(name = "routingDataSource")
     @ConditionalOnMissingBean(name = "routingDataSource")
@@ -136,7 +142,7 @@ public class DatabaseAutoConfiguration {
 
         return builder
                 .dataSource(dataSource)
-                .packages("com.immortals.auth.service.domain.entity")
+                .packages("com.immortals.auth.service.domain")
                 .persistenceUnit("authPU")
                 .properties(buildJpaProperties())
                 .build();
@@ -164,6 +170,7 @@ public class DatabaseAutoConfiguration {
         props.put("org.hibernate.envers.revision_type_field_name", envers.getRevisionTypeFieldName());
         props.put("org.hibernate.envers.store_data_at_delete", envers.isStoreDataAtDelete());
         props.put("org.hibernate.envers.default_schema", envers.getDefaultSchema());
+        props.put("org.hibernate.envers.autoRegisterListeners", envers.isAutoRegisterListeners());
 
         return props;
     }

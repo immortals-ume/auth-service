@@ -1,6 +1,7 @@
 package com.immortals.auth.service.repository;
 
 import com.immortals.auth.service.domain.entity.User;
+import com.immortals.auth.service.domain.enums.AuthProvider;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -21,6 +22,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByEmail(String email);
 
+    Optional<User> findByProviderIdAndAuthProvider(String providerId, AuthProvider authProvider);
+
     @Query("SELECT u FROM User u LEFT JOIN FETCH u.roles r LEFT JOIN FETCH r.permissions WHERE u.id = :id")
     Optional<User> findByIdWithRolesAndPermissions(@Param("id") Long id);
 
@@ -36,3 +39,4 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Query("UPDATE User u SET u.password = :password WHERE u.id = :id")
     void updatePassword(@Param("id") Long id, @Param("password") String password);
 }
+

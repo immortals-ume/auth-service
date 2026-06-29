@@ -1,6 +1,5 @@
 package com.immortals.auth.service.db.context;
 
-
 import com.immortals.auth.service.db.props.DbType;
 
 /**
@@ -38,3 +37,4 @@ public class DbContextHolder {
         contextHolder.remove();
     }
 }
+

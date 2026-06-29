@@ -6,13 +6,19 @@ import net.minidev.json.annotate.JsonIgnore;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Objects;
 
-
-public class UserPrincipal implements UserDetails {
+/**
+ * Unified principal that works for both form-login (UserDetails) and
+ * OAuth2 social-login (OAuth2User), so the same JWT generation path
+ * is used regardless of the authentication mechanism.
+ */
+public class UserPrincipal implements UserDetails, OAuth2User {
 
     private final Long userId;
     private final String userName;
@@ -28,8 +34,9 @@ public class UserPrincipal implements UserDetails {
     private final boolean enabled;
 
     private final Collection<? extends GrantedAuthority> authorities;
-
     private final Collection<String> permissions;
+
+    private Map<String, Object> attributes;
 
     private UserPrincipal(Long userId,
                           String userName,
@@ -53,17 +60,14 @@ public class UserPrincipal implements UserDetails {
         this.enabled = enabled;
     }
 
-    /**
-     * Factory method to build the principal from User entity
-     */
+    /** Form-login path: built from the local DB user record. */
     public static UserPrincipal create(User user, Collection<Roles> roles, Collection<String> permissions) {
-        Collection<? extends GrantedAuthority> authorities = extractAuthorities(roles);
         return new UserPrincipal(
                 user.getId(),
                 user.userName(),
                 user.password(),
                 user.email(),
-                authorities,
+                extractAuthorities(roles),
                 permissions,
                 Boolean.TRUE.equals(user.accountNonExpired()),
                 Boolean.TRUE.equals(user.accountNonLocked()) && !Boolean.TRUE.equals(user.accountLocked()),
@@ -72,12 +76,32 @@ public class UserPrincipal implements UserDetails {
         );
     }
 
+    /** OAuth2 path: same as create() but with provider attributes attached. */
+    public static UserPrincipal createFromOAuth2(User user, Collection<Roles> roles,
+                                                  Collection<String> permissions,
+                                                  Map<String, Object> attributes) {
+        UserPrincipal principal = create(user, roles, permissions);
+        principal.attributes = attributes;
+        return principal;
+    }
+
     private static Collection<? extends GrantedAuthority> extractAuthorities(Collection<Roles> roles) {
         if (roles == null) return Collections.emptyList();
         return roles.stream()
                 .filter(Objects::nonNull)
                 .map(role -> new SimpleGrantedAuthority(role.getRoleName()))
                 .toList();
+    }
+
+    @Override
+    public Map<String, Object> getAttributes() {
+        return attributes != null ? attributes : Collections.emptyMap();
+    }
+
+    /** OAuth2User.getName() — required; we return the internal user ID string. */
+    @Override
+    public String getName() {
+        return String.valueOf(userId);
     }
 
     @Override
@@ -139,3 +163,4 @@ public class UserPrincipal implements UserDetails {
         return permissions;
     }
 }
+

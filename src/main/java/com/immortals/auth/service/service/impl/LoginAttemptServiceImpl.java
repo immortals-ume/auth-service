@@ -32,16 +32,16 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
     public void loginSucceeded(String username) {
         try {
             resetAttempts(username);
-            log.debug("Login succeeded for helpers: {}", username);
+            log.debug("Login succeeded for user: {}", username);
         } catch (Exception e) {
-            log.error("Error clearing login attempts for helpers: {}", username, e);
+            log.error("Error clearing login attempts for user: {}", username, e);
         }
     }
 
     @Override
     public void loginFailed(String username) {
         try {
-            LoginAttempt entity = repository.findById(username)
+            LoginAttempt entity = repository.findByUsername(username)
                     .orElseGet(() -> createNew(username));
 
             entity.setFailedAttempts(entity.getFailedAttempts() + 1);
@@ -54,17 +54,17 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
 
             repository.save(entity);
 
-            log.warn("Login failed for helpers: {}, attempts: {}", username, entity.getFailedAttempts());
+            log.warn("Login failed for user: {}, attempts: {}", username, entity.getFailedAttempts());
 
         } catch (Exception e) {
-            log.error("Error tracking login failure for helpers: {}", username, e);
+            log.error("Error tracking login failure for user: {}", username, e);
         }
     }
 
     @Override
     public boolean isBlocked(String username) {
         try {
-            LoginAttempt entity = repository.findById(username).orElse(null);
+            LoginAttempt entity = repository.findByUsername(username).orElse(null);
 
             if (entity == null || entity.getBlockedAt() == null) {
                 return false;
@@ -89,21 +89,21 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
     @Override
     public void resetAttempts(String username) {
         try {
-            repository.deleteById(username);
-            log.debug("Reset login attempts for helpers: {}", username);
+            repository.deleteByUsername(username);
+            log.debug("Reset login attempts for user: {}", username);
         } catch (Exception e) {
-            log.error("Error resetting login attempts for helpers: {}", username, e);
+            log.error("Error resetting login attempts for user: {}", username, e);
         }
     }
 
     @Override
     public int getFailedAttempts(String username) {
         try {
-            return Math.toIntExact(repository.findById(username)
+            return Math.toIntExact(repository.findByUsername(username)
                     .map(LoginAttempt::getFailedAttempts)
                     .orElse(0L));
         } catch (Exception e) {
-            log.error("Error getting failed attempts for helpers: {}", username, e);
+            log.error("Error getting failed attempts for user: {}", username, e);
             return 0;
         }
     }
@@ -119,16 +119,16 @@ public class LoginAttemptServiceImpl implements LoginAttemptService {
 
     private void unblockUser(String username) {
         try {
-            repository.deleteById(username);
+            repository.deleteByUsername(username);
             log.info("User {} unblocked", username);
         } catch (Exception e) {
-            log.error("Error unblocking helpers: {}", username, e);
+            log.error("Error unblocking user: {}", username, e);
         }
     }
 
     public Duration getRemainingBlockTime(String username) {
         try {
-            LoginAttempt entity = repository.findById(username).orElse(null);
+            LoginAttempt entity = repository.findByUsername(username).orElse(null);
 
             if (entity == null || entity.getBlockedAt() == null) {
                 return Duration.ZERO;

@@ -83,3 +83,4 @@ public class VerificationToken extends Auditable {
         }
     }
 }
+

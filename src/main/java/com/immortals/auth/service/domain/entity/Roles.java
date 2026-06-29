@@ -1,6 +1,5 @@
 package com.immortals.auth.service.domain.entity;
 
-
 import com.immortals.auth.service.domain.Auditable;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
@@ -152,3 +151,4 @@ public class Roles extends Auditable implements Serializable {
         }
     }
 }
+

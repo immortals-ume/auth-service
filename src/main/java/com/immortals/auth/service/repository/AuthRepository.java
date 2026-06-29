@@ -1,6 +1,5 @@
 package com.immortals.auth.service.repository;
 
-
 import com.immortals.auth.service.domain.entity.User;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -24,9 +23,7 @@ public interface AuthRepository extends JpaRepository<User, Long> {
     @Query("SELECT u FROM User u JOIN FETCH u.roles WHERE u.id = :id")
     Optional<User> findByIdWithRoles(@Param("id") Long id);
 
-    @Lock(LockModeType.PESSIMISTIC_READ)
     Boolean existsByUserName(String username);
 
-    @Lock(LockModeType.PESSIMISTIC_READ)
     Boolean existsByEmail(String email);
 }

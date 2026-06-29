@@ -1,6 +1,5 @@
 package com.immortals.auth.service.domain.entity;
 
-
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.immortals.auth.service.domain.Auditable;
 import jakarta.persistence.*;

@@ -5,14 +5,32 @@
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
                             https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
 
-    <!-- revinfo: Envers revision metadata (@RevisionEntity AuditingRevisionEntity) -->
+    <!--
+        Hibernate Envers audit tables.
+        Column naming matches application-dev.yaml envers config:
+          revision-field-name:      rev
+          revision-type-field-name: rev_type
+          audit-table-suffix:       _AUD
+          default-schema:           user_audit
+
+        Audited entities: Roles, Permissions, LoginAttempt, UserAddress,
+                          Country, State, City.
+        User is NOT @Audited — no users_AUD needed.
+        UserAddress.user is @NotAudited — user_id excluded from user_address_AUD.
+        Roles.permissions ManyToMany is audited — role_permission_AUD is required.
+    -->
+
+    <!-- revinfo: revision metadata (@RevisionEntity AuditingRevisionEntity) -->
     <changeSet id="v1-012-revinfo" author="immortals-ume">
+        <validCheckSum>ANY</validCheckSum>
         <createTable tableName="revinfo" schemaName="user_audit">
-            <column name="id"          type="INT"          defaultValueComputed="nextval('user_audit.revinfo_seq')"><constraints primaryKey="true" nullable="false"/></column>
-            <column name="timestamp"   type="BIGINT"><constraints nullable="false"/></column>
-            <column name="username"    type="VARCHAR(255)"/>
-            <column name="ip_address"  type="VARCHAR(255)"/>
-            <column name="user_agent"  type="VARCHAR(255)"/>
+            <column name="id"         type="INT" defaultValueComputed="nextval('user_audit.revinfo_seq')">
+                <constraints primaryKey="true" primaryKeyName="pk_revinfo" nullable="false"/>
+            </column>
+            <column name="timestamp"  type="BIGINT"><constraints nullable="false"/></column>
+            <column name="username"   type="VARCHAR(255)"/>
+            <column name="ip_address" type="VARCHAR(255)"/>
+            <column name="user_agent" type="VARCHAR(255)"/>
         </createTable>
 
         <createIndex indexName="idx_revinfo_timestamp" tableName="revinfo" schemaName="user_audit">
@@ -26,10 +44,11 @@
 
     <!-- role_AUD -->
     <changeSet id="v1-012-role-aud" author="immortals-ume">
-        <createTable tableName="role_AUD" schemaName="user_audit">
+        <validCheckSum>ANY</validCheckSum>
+        <createTable tableName="role_aud" schemaName="user_audit">
             <column name="id"           type="BIGINT"><constraints nullable="false"/></column>
             <column name="rev"          type="INT"><constraints nullable="false"/></column>
-            <column name="revtype"      type="SMALLINT"/>
+            <column name="rev_type"     type="SMALLINT"/>
             <column name="version"      type="BIGINT"/>
             <column name="role_id"      type="BIGINT"/>
             <column name="role_name"    type="VARCHAR(20)"/>
@@ -43,24 +62,27 @@
             <column name="deleted_date" type="TIMESTAMP"/>
         </createTable>
 
-        <addPrimaryKey constraintName="pk_role_aud" tableName="role_AUD" schemaName="user_audit" columnNames="id, rev"/>
+        <addPrimaryKey constraintName="pk_role_aud"
+                       tableName="role_aud" schemaName="user_audit"
+                       columnNames="id, rev"/>
 
         <addForeignKeyConstraint constraintName="fk_role_aud_revinfo"
-                                 baseTableSchemaName="user_audit" baseTableName="role_AUD" baseColumnNames="rev"
+                                 baseTableSchemaName="user_audit" baseTableName="role_aud" baseColumnNames="rev"
                                  referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
                                  onDelete="CASCADE"/>
 
         <rollback>
-            <dropTable tableName="role_AUD" schemaName="user_audit" cascadeConstraints="true"/>
+            <dropTable tableName="role_aud" schemaName="user_audit" cascadeConstraints="true"/>
         </rollback>
     </changeSet>
 
     <!-- permission_AUD -->
     <changeSet id="v1-012-permission-aud" author="immortals-ume">
-        <createTable tableName="permission_AUD" schemaName="user_audit">
+        <validCheckSum>ANY</validCheckSum>
+        <createTable tableName="permission_aud" schemaName="user_audit">
             <column name="id"              type="BIGINT"><constraints nullable="false"/></column>
             <column name="rev"             type="INT"><constraints nullable="false"/></column>
-            <column name="revtype"         type="SMALLINT"/>
+            <column name="rev_type"        type="SMALLINT"/>
             <column name="version"         type="BIGINT"/>
             <column name="permission_name" type="VARCHAR(50)"/>
             <column name="description"     type="VARCHAR(200)"/>
@@ -73,24 +95,55 @@
             <column name="deleted_date"    type="TIMESTAMP"/>
         </createTable>
 
-        <addPrimaryKey constraintName="pk_permission_aud" tableName="permission_AUD" schemaName="user_audit" columnNames="id, rev"/>
+        <addPrimaryKey constraintName="pk_permission_aud"
+                       tableName="permission_aud" schemaName="user_audit"
+                       columnNames="id, rev"/>
 
         <addForeignKeyConstraint constraintName="fk_permission_aud_revinfo"
-                                 baseTableSchemaName="user_audit" baseTableName="permission_AUD" baseColumnNames="rev"
+                                 baseTableSchemaName="user_audit" baseTableName="permission_aud" baseColumnNames="rev"
                                  referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
                                  onDelete="CASCADE"/>
 
         <rollback>
-            <dropTable tableName="permission_AUD" schemaName="user_audit" cascadeConstraints="true"/>
+            <dropTable tableName="permission_aud" schemaName="user_audit" cascadeConstraints="true"/>
+        </rollback>
+    </changeSet>
+
+    <!--
+        role_permission_AUD: audit table for the Roles.permissions @ManyToMany join.
+        Roles is @Audited and the permissions field is NOT @NotAudited, so Envers
+        audits the join table automatically. PK is (role_id, permission_id, rev).
+    -->
+    <changeSet id="v1-012-role-permission-aud" author="immortals-ume">
+        <validCheckSum>ANY</validCheckSum>
+        <createTable tableName="role_permission_aud" schemaName="user_audit">
+            <column name="role_id"       type="BIGINT"><constraints nullable="false"/></column>
+            <column name="permission_id" type="BIGINT"><constraints nullable="false"/></column>
+            <column name="rev"           type="INT"><constraints nullable="false"/></column>
+            <column name="rev_type"      type="SMALLINT"/>
+        </createTable>
+
+        <addPrimaryKey constraintName="pk_role_permission_aud"
+                       tableName="role_permission_aud" schemaName="user_audit"
+                       columnNames="role_id, permission_id, rev"/>
+
+        <addForeignKeyConstraint constraintName="fk_role_permission_aud_revinfo"
+                                 baseTableSchemaName="user_audit" baseTableName="role_permission_aud" baseColumnNames="rev"
+                                 referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+
+        <rollback>
+            <dropTable tableName="role_permission_aud" schemaName="user_audit" cascadeConstraints="true"/>
         </rollback>
     </changeSet>
 
     <!-- login_attempt_AUD -->
     <changeSet id="v1-012-login-attempt-aud" author="immortals-ume">
-        <createTable tableName="login_attempt_AUD" schemaName="user_audit">
+        <validCheckSum>ANY</validCheckSum>
+        <createTable tableName="login_attempt_aud" schemaName="user_audit">
             <column name="id"               type="BIGINT"><constraints nullable="false"/></column>
             <column name="rev"              type="INT"><constraints nullable="false"/></column>
-            <column name="revtype"          type="SMALLINT"/>
+            <column name="rev_type"         type="SMALLINT"/>
             <column name="version"          type="BIGINT"/>
             <column name="username"         type="VARCHAR(100)"/>
             <column name="ip_address"       type="VARCHAR(45)"/>
@@ -110,24 +163,31 @@
             <column name="deleted_date"     type="TIMESTAMP"/>
         </createTable>
 
-        <addPrimaryKey constraintName="pk_login_attempt_aud" tableName="login_attempt_AUD" schemaName="user_audit" columnNames="id, rev"/>
+        <addPrimaryKey constraintName="pk_login_attempt_aud"
+                       tableName="login_attempt_aud" schemaName="user_audit"
+                       columnNames="id, rev"/>
 
         <addForeignKeyConstraint constraintName="fk_login_attempt_aud_revinfo"
-                                 baseTableSchemaName="user_audit" baseTableName="login_attempt_AUD" baseColumnNames="rev"
+                                 baseTableSchemaName="user_audit" baseTableName="login_attempt_aud" baseColumnNames="rev"
                                  referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
                                  onDelete="CASCADE"/>
 
         <rollback>
-            <dropTable tableName="login_attempt_AUD" schemaName="user_audit" cascadeConstraints="true"/>
+            <dropTable tableName="login_attempt_aud" schemaName="user_audit" cascadeConstraints="true"/>
         </rollback>
     </changeSet>
 
-    <!-- user_address_AUD (user_id excluded — @NotAudited in entity) -->
+    <!--
+        user_address_AUD.
+        UserAddress.user is @NotAudited — Envers will NOT write user_id, so the
+        column is excluded. country_id, state_id, city_id are audited normally.
+    -->
     <changeSet id="v1-012-user-address-aud" author="immortals-ume">
-        <createTable tableName="user_address_AUD" schemaName="user_audit">
+        <validCheckSum>ANY</validCheckSum>
+        <createTable tableName="user_address_aud" schemaName="user_audit">
             <column name="id"                type="BIGINT"><constraints nullable="false"/></column>
             <column name="rev"               type="INT"><constraints nullable="false"/></column>
-            <column name="revtype"           type="SMALLINT"/>
+            <column name="rev_type"          type="SMALLINT"/>
             <column name="version"           type="BIGINT"/>
             <column name="address_uuid"      type="VARCHAR(36)"/>
             <column name="label"             type="VARCHAR(50)"/>
@@ -156,24 +216,27 @@
             <column name="deleted_date"      type="TIMESTAMP"/>
         </createTable>
 
-        <addPrimaryKey constraintName="pk_user_address_aud" tableName="user_address_AUD" schemaName="user_audit" columnNames="id, rev"/>
+        <addPrimaryKey constraintName="pk_user_address_aud"
+                       tableName="user_address_aud" schemaName="user_audit"
+                       columnNames="id, rev"/>
 
         <addForeignKeyConstraint constraintName="fk_user_address_aud_revinfo"
-                                 baseTableSchemaName="user_audit" baseTableName="user_address_AUD" baseColumnNames="rev"
+                                 baseTableSchemaName="user_audit" baseTableName="user_address_aud" baseColumnNames="rev"
                                  referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
                                  onDelete="CASCADE"/>
 
         <rollback>
-            <dropTable tableName="user_address_AUD" schemaName="user_audit" cascadeConstraints="true"/>
+            <dropTable tableName="user_address_aud" schemaName="user_audit" cascadeConstraints="true"/>
         </rollback>
     </changeSet>
 
     <!-- countries_AUD -->
     <changeSet id="v1-012-countries-aud" author="immortals-ume">
-        <createTable tableName="countries_AUD" schemaName="user_audit">
+        <validCheckSum>ANY</validCheckSum>
+        <createTable tableName="countries_aud" schemaName="user_audit">
             <column name="id"           type="BIGINT"><constraints nullable="false"/></column>
             <column name="rev"          type="INT"><constraints nullable="false"/></column>
-            <column name="revtype"      type="SMALLINT"/>
+            <column name="rev_type"     type="SMALLINT"/>
             <column name="version"      type="BIGINT"/>
             <column name="country_name" type="VARCHAR(100)"/>
             <column name="country_code" type="VARCHAR(5)"/>
@@ -186,24 +249,27 @@
             <column name="deleted_date" type="TIMESTAMP"/>
         </createTable>
 
-        <addPrimaryKey constraintName="pk_countries_aud" tableName="countries_AUD" schemaName="user_audit" columnNames="id, rev"/>
+        <addPrimaryKey constraintName="pk_countries_aud"
+                       tableName="countries_aud" schemaName="user_audit"
+                       columnNames="id, rev"/>
 
         <addForeignKeyConstraint constraintName="fk_countries_aud_revinfo"
-                                 baseTableSchemaName="user_audit" baseTableName="countries_AUD" baseColumnNames="rev"
+                                 baseTableSchemaName="user_audit" baseTableName="countries_aud" baseColumnNames="rev"
                                  referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
                                  onDelete="CASCADE"/>
 
         <rollback>
-            <dropTable tableName="countries_AUD" schemaName="user_audit" cascadeConstraints="true"/>
+            <dropTable tableName="countries_aud" schemaName="user_audit" cascadeConstraints="true"/>
         </rollback>
     </changeSet>
 
     <!-- states_AUD -->
     <changeSet id="v1-012-states-aud" author="immortals-ume">
-        <createTable tableName="states_AUD" schemaName="user_audit">
+        <validCheckSum>ANY</validCheckSum>
+        <createTable tableName="states_aud" schemaName="user_audit">
             <column name="id"           type="BIGINT"><constraints nullable="false"/></column>
             <column name="rev"          type="INT"><constraints nullable="false"/></column>
-            <column name="revtype"      type="SMALLINT"/>
+            <column name="rev_type"     type="SMALLINT"/>
             <column name="version"      type="BIGINT"/>
             <column name="state_name"   type="VARCHAR(100)"/>
             <column name="state_code"   type="VARCHAR(10)"/>
@@ -217,24 +283,27 @@
             <column name="deleted_date" type="TIMESTAMP"/>
         </createTable>
 
-        <addPrimaryKey constraintName="pk_states_aud" tableName="states_AUD" schemaName="user_audit" columnNames="id, rev"/>
+        <addPrimaryKey constraintName="pk_states_aud"
+                       tableName="states_aud" schemaName="user_audit"
+                       columnNames="id, rev"/>
 
         <addForeignKeyConstraint constraintName="fk_states_aud_revinfo"
-                                 baseTableSchemaName="user_audit" baseTableName="states_AUD" baseColumnNames="rev"
+                                 baseTableSchemaName="user_audit" baseTableName="states_aud" baseColumnNames="rev"
                                  referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
                                  onDelete="CASCADE"/>
 
         <rollback>
-            <dropTable tableName="states_AUD" schemaName="user_audit" cascadeConstraints="true"/>
+            <dropTable tableName="states_aud" schemaName="user_audit" cascadeConstraints="true"/>
         </rollback>
     </changeSet>
 
     <!-- cities_AUD -->
     <changeSet id="v1-012-cities-aud" author="immortals-ume">
-        <createTable tableName="cities_AUD" schemaName="user_audit">
+        <validCheckSum>ANY</validCheckSum>
+        <createTable tableName="cities_aud" schemaName="user_audit">
             <column name="id"           type="BIGINT"><constraints nullable="false"/></column>
             <column name="rev"          type="INT"><constraints nullable="false"/></column>
-            <column name="revtype"      type="SMALLINT"/>
+            <column name="rev_type"     type="SMALLINT"/>
             <column name="version"      type="BIGINT"/>
             <column name="city_name"    type="VARCHAR(100)"/>
             <column name="state_id"     type="BIGINT"/>
@@ -247,15 +316,17 @@
             <column name="deleted_date" type="TIMESTAMP"/>
         </createTable>
 
-        <addPrimaryKey constraintName="pk_cities_aud" tableName="cities_AUD" schemaName="user_audit" columnNames="id, rev"/>
+        <addPrimaryKey constraintName="pk_cities_aud"
+                       tableName="cities_aud" schemaName="user_audit"
+                       columnNames="id, rev"/>
 
         <addForeignKeyConstraint constraintName="fk_cities_aud_revinfo"
-                                 baseTableSchemaName="user_audit" baseTableName="cities_AUD" baseColumnNames="rev"
+                                 baseTableSchemaName="user_audit" baseTableName="cities_aud" baseColumnNames="rev"
                                  referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
                                  onDelete="CASCADE"/>
 
         <rollback>
-            <dropTable tableName="cities_AUD" schemaName="user_audit" cascadeConstraints="true"/>
+            <dropTable tableName="cities_aud" schemaName="user_audit" cascadeConstraints="true"/>
         </rollback>
     </changeSet>
 

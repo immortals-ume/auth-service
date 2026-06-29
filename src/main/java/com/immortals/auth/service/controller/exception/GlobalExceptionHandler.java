@@ -10,11 +10,15 @@ import com.immortals.logging.core.LogManager;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.ValidationException;
 import liquibase.exception.DatabaseException;
 import org.hibernate.cache.CacheException;
 import org.springframework.beans.TypeMismatchException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -197,6 +201,22 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(ValidationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleValidationException(
+            ValidationException ex,
+            HttpServletRequest request) {
+
+        log.warn("Validation error: {}", ex.getMessage());
+        return badRequest(
+                ApiResponse.error(
+                        HttpStatus.BAD_REQUEST.value(),
+                        HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                        ex.getMessage(),
+                        request.getRequestURI(),
+                        getCorrelationId(request)
+                )
+        );
+    }
 
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ApiResponse<Void>> handleAuthenticationException(
@@ -300,6 +320,56 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMessageNotReadable(
+            HttpMessageNotReadableException ex,
+            HttpServletRequest request) {
+
+        log.warn("Malformed request body: {}", ex.getMessage());
+        return badRequest(
+                ApiResponse.error(
+                        HttpStatus.BAD_REQUEST.value(),
+                        HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                        "Malformed or unreadable request body",
+                        request.getRequestURI(),
+                        getCorrelationId(request)
+                )
+        );
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(
+            AccessDeniedException ex,
+            HttpServletRequest request) {
+
+        log.warn("Access denied on {}: {}", request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                ApiResponse.error(
+                        HttpStatus.FORBIDDEN.value(),
+                        HttpStatus.FORBIDDEN.getReasonPhrase(),
+                        "Access denied — you do not have the required role or permission",
+                        request.getRequestURI(),
+                        getCorrelationId(request)
+                )
+        );
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(
+            DataIntegrityViolationException ex,
+            HttpServletRequest request) {
+
+        log.warn("Data integrity violation on {}: {}", request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                ApiResponse.error(
+                        HttpStatus.CONFLICT.value(),
+                        HttpStatus.CONFLICT.getReasonPhrase(),
+                        "A resource with the same unique value already exists",
+                        request.getRequestURI(),
+                        getCorrelationId(request)
+                )
+        );
+    }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGenericException(

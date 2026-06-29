@@ -19,9 +19,13 @@
     <include file="db/changelogs/v1/012-create-envers-tables.xml"/>
     <include file="db/changelogs/v1/013-create-user-session.xml"/>
     <include file="db/changelogs/v1/014-create-system-audit.xml"/>
-    <include file="db/changelogs/v1/015-fix-envers-columns.xml"/>
-    <include file="db/changelogs/v1/016-create-verification-tokens.xml"/>
-    <include file="db/changelogs/v1/020-create-audit-log.xml"/>
+    <include file="db/changelogs/v1/015-create-verification-tokens.xml"/>
+    <include file="db/changelogs/v1/016-create-audit-log.xml"/>
+    <include file="db/changelogs/v1/017-add-oauth2-provider-fields.xml"/>
+    <include file="db/changelogs/v1/018-make-contact-nullable.xml"/>
+    <include file="db/changelogs/v1/019-create-otp-records.xml"/>
+    <include file="db/changelogs/v1/020-create-blacklisted-tokens.xml"/>
+    <include file="db/changelogs/v1/021-fix-envers-schema.xml"/>
     <include file="db/changelogs/v1-data/001-seed-countries.xml"/>
     <include file="db/changelogs/v1-data/002-seed-states.xml"/>
     <include file="db/changelogs/v1-data/003-seed-cities.xml"/>

@@ -41,7 +41,6 @@ public final class ObjectMapperUtils {
         }
     }
 
-
     public static <T> Optional<T> fromJsonSafe(String json, TypeReference<T> typeRef) {
         try {
             return Optional.ofNullable(MAPPER.readValue(json, typeRef));
@@ -49,7 +48,6 @@ public final class ObjectMapperUtils {
             return Optional.empty();
         }
     }
-
 
     public static Optional<JsonNode> toJsonNodeSafe(String json) {
         try {

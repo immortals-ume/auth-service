@@ -1,13 +1,11 @@
 package com.immortals.auth.service.service;
 
 import com.immortals.auth.service.domain.dto.*;
-import com.immortals.auth.service.domain.entity.Roles;
-
 
 import java.util.List;
 
 public interface EntitlementService {
-    RoleResponseDto create(Roles roles);
+    RoleResponseDto create(CreateRoleRequest request);
 
     List<RoleResponseDto> getRolesForUsers();
 
@@ -29,3 +27,4 @@ public interface EntitlementService {
 
     void removePermissionFromRole(Long roleId, Long permissionId);
 }
+

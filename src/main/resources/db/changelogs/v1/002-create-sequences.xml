@@ -140,4 +140,41 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="v1-002-seq-verification-token" author="immortals-ume">
+        <createSequence sequenceName="verification_token_seq"
+                        schemaName="user_auth"
+                        startValue="1"
+                        incrementBy="50"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="verification_token_seq" schemaName="user_auth"/>
+        </rollback>
+    </changeSet>
+
+    <!-- public schema sequences (SYSTEM_AUDIT and audit_log live in public) -->
+    <changeSet id="v1-002-seq-system-audit" author="immortals-ume">
+        <createSequence sequenceName="system_audit_seq"
+                        schemaName="public"
+                        startValue="1"
+                        incrementBy="1"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="system_audit_seq" schemaName="public"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v1-002-seq-audit-log" author="immortals-ume">
+        <createSequence sequenceName="audit_log_seq"
+                        schemaName="public"
+                        startValue="1"
+                        incrementBy="1"
+                        minValue="1"
+                        cycle="false"/>
+        <rollback>
+            <dropSequence sequenceName="audit_log_seq" schemaName="public"/>
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

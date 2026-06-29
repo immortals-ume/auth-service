@@ -1,0 +1,158 @@
+
+datasource:
+  write:
+    url: "jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS user_auth\\;CREATE SCHEMA IF NOT EXISTS user_audit"
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+    pool-name: write-pool-test
+    maximum-pool-size: 2
+    minimum-idle: 1
+    connection-timeout: 30000
+    idle-timeout: 600000
+    max-lifetime: 1800000
+  read:
+    url: "jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS user_auth\\;CREATE SCHEMA IF NOT EXISTS user_audit"
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+    pool-name: read-pool-test
+    maximum-pool-size: 2
+    minimum-idle: 1
+    connection-timeout: 30000
+    idle-timeout: 600000
+    max-lifetime: 1800000
+  core:
+    show-sql: false
+    generate-ddl: false
+    hibernate:
+      ddl-auto: create-drop
+      dialect: com.immortals.auth.service.config.TestH2Dialect
+      format-sql: false
+      envers:
+        audit-table-suffix: _AUD
+        revision-field-name: rev
+        revision-type-field-name: rev_type
+        store-data-at-delete: true
+        default-schema: ""
+        auto-register-listeners: true
+
+spring:
+  liquibase:
+    enabled: false
+  kafka:
+    bootstrap-servers: "localhost:9092"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        spring.json.add.type.headers: false
+  cloud:
+    vault:
+      enabled: false
+    config:
+      enabled: false
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: test-google-client-id
+            client-secret: test-google-secret
+            scope:
+              - openid
+              - profile
+              - email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          github:
+            client-id: test-github-client-id
+            client-secret: test-github-secret
+            scope:
+              - read:user
+              - user:email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          google:
+            authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
+            token-uri: https://oauth2.googleapis.com/token
+            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
+            user-name-attribute: sub
+          github:
+            authorization-uri: https://github.com/login/oauth/authorize
+            token-uri: https://github.com/login/oauth/access_token
+            user-info-uri: https://api.github.com/user
+            user-name-attribute: id
+
+eureka:
+  client:
+    enabled: false
+
+spring.cloud.compatibility-verifier.enabled: false
+
+management:
+  server:
+    port: 0
+
+auth:
+  cache:
+    static-resources:
+      max-age-seconds: 0
+  jwt-issuer: "http://localhost:8080"
+  base-url: "http://localhost:8080"
+  frontend-base-url: "http://localhost:3000"
+  access-token-expiry-ms: 900000
+  refresh-token-expiry-ms: 604800000
+  max-login-attempts: 5
+  login-block-duration-minutes: 15
+  oauth2:
+    redirect-uri: "http://localhost:3000/oauth2/callback"
+  service-clients:
+    clients:
+      - client-id: catalog-service
+        client-secret: "{noop}catalog-dev-secret"
+        roles:
+          - ROLE_SERVICE
+  kafka:
+    topics:
+      email-verification: auth.notification.email-verification
+      password-reset: auth.notification.password-reset
+      otp: auth.notification.otp
+    partitions: 1
+    replication-factor: 1
+  cors:
+    allowed-origins:
+      - "http://localhost:3000"
+    allowed-methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    allowed-headers:
+      - "*"
+    allow-credentials: true
+    max-age: 3600
+  cookie:
+    access-token-name: access_token
+    refresh-token-name: refresh_token
+    domain: localhost
+    path: /
+    secure: false
+    http-only: true
+    access-token-max-age-seconds: 900
+    refresh-token-max-age-seconds: 604800
+
+# JWT keys injected via @DynamicPropertySource in integration tests
+# For unit tests, JwtProvider is constructed directly with generated keys
+jwt:
+  key:
+    private-key: ""
+    public-key: ""
+
+logging:
+  level:
+    com.immortals.auth.service: WARN
+    org.hibernate: WARN
+    org.springframework: WARN

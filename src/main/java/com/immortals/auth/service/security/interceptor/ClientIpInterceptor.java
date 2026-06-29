@@ -1,6 +1,5 @@
 package com.immortals.auth.service.security.interceptor;
 
-
 import com.immortals.auth.service.context.RequestContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -12,6 +11,7 @@ import static com.immortals.auth.service.constant.AuthConstants.MDC_USER_AGENT_K
 
 @Component
 public class ClientIpInterceptor implements HandlerInterceptor {
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String userAgent = extractUserAgent(request);
@@ -24,6 +24,7 @@ public class ClientIpInterceptor implements HandlerInterceptor {
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
         MDC.remove(MDC_USER_AGENT_KEY);
+        RequestContext.clear();
     }
 
     private String extractUserAgent(HttpServletRequest request) {
@@ -31,3 +32,4 @@ public class ClientIpInterceptor implements HandlerInterceptor {
         return (userAgent != null && !userAgent.isEmpty()) ? userAgent : "unknown";
     }
 }
+

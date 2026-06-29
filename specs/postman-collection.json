@@ -1,0 +1,2114 @@
+{
+  "info": {
+    "_postman_id": "auth-service-v1",
+    "name": "Auth Service API",
+    "description": "Complete collection for the Auth Service — Authentication, User management, and RBAC Entitlements.\n\n**Setup**: Import `postman-env.json`, select the \"Auth Service - Local\" environment, then run `POST Login` first — it auto-captures `access_token` and `refresh_token` into environment variables.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [""]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global: assert response time is reasonable",
+          "pm.test('Response time < 3000 ms', () => pm.expect(pm.response.responseTime).to.be.below(3000));"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "{{base_url}}",
+      "type": "string"
+    }
+  ],
+  "item": [
+
+    {
+      "name": "OAuth2 Social Login",
+      "description": "OAuth2 flows are browser-driven — Spring Security handles the authorization code exchange automatically.\n\nFlow:\n1. Open the initiation URL in a browser (not Postman) — it redirects to Google/GitHub consent page.\n2. After consent, Google/GitHub redirects back to `/login/oauth2/code/{provider}`.\n3. Spring Security exchanges the code, `CustomOAuth2UserService` finds/creates the DB user, `OAuth2AuthenticationSuccessHandler` issues JWT cookies and redirects to `auth.oauth2.redirect-uri` (default: http://localhost:3000/oauth2/callback?login=success).\n4. The frontend reads the `access_token` cookie — identical to a form-login session.\n\nThe requests below can be used to verify the initiation redirect is reachable. Postman cannot complete the full browser-based flow.",
+      "item": [
+
+        {
+          "name": "Initiate Google OAuth2 Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Spring Security returns 302 → Google. Postman follows redirects by default.",
+                  "// A 302 or 200 (after redirect) means the endpoint is reachable.",
+                  "pm.test('Initiation endpoint reachable (302 or 200)', () => {",
+                  "    pm.expect([200, 302]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{raw_base_url}}/oauth2/authorization/google",
+              "host": ["{{raw_base_url}}"],
+              "path": ["oauth2", "authorization", "google"]
+            },
+            "description": "Opens the Google OAuth2 consent page. Must be visited in a browser — Postman cannot complete the interactive consent step.\n\nSpring Security auto-generates this route from the `spring.security.oauth2.client.registration.google` config."
+          }
+        },
+
+        {
+          "name": "Initiate GitHub OAuth2 Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Initiation endpoint reachable (302 or 200)', () => {",
+                  "    pm.expect([200, 302]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{raw_base_url}}/oauth2/authorization/github",
+              "host": ["{{raw_base_url}}"],
+              "path": ["oauth2", "authorization", "github"]
+            },
+            "description": "Opens the GitHub OAuth2 consent page. Must be visited in a browser.\n\nSpring Security auto-generates this route from the `spring.security.oauth2.client.registration.github` config."
+          }
+        },
+
+        {
+          "name": "OAuth2 Callback (Spring Security internal)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// This endpoint is only valid when called by the OAuth2 provider after consent.",
+                  "// Calling it directly will return 400 (missing code/state params) — that is expected.",
+                  "pm.test('Endpoint exists — 400 without valid code/state is expected', () => {",
+                  "    pm.expect([400, 401, 302]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{raw_base_url}}/login/oauth2/code/google?code=REPLACE_ME&state=REPLACE_ME",
+              "host": ["{{raw_base_url}}"],
+              "path": ["login", "oauth2", "code", "google"],
+              "query": [
+                { "key": "code", "value": "REPLACE_ME", "description": "Authorization code from Google — only valid for a few seconds, issued by the provider" },
+                { "key": "state", "value": "REPLACE_ME", "description": "CSRF state token generated by Spring Security at initiation — must match the session" }
+              ]
+            },
+            "description": "Spring Security's auto-generated callback URL. Only callable by Google/GitHub after the user grants consent. Included here for documentation — cannot be tested manually without a real code+state pair from the provider."
+          }
+        }
+
+      ]
+    },
+
+    {
+      "name": "Service-to-Service (S2S)",
+      "description": "Internal endpoints protected by HTTP Basic auth on `/api/internal/**`.\n\nOther microservices (catalog-service, order-service, etc.) authenticate using their `client-id` and `client-secret` from `auth.service-clients.clients` in application config. Secrets use DelegatingPasswordEncoder prefix — `{noop}` for dev plaintext, `{bcrypt}` for production.\n\n**No internal controllers are implemented yet** — the security chain is wired and ready. Add controllers under `/api/internal/**` and they will be protected automatically.\n\nThese requests use `{{s2s_client_id}}` and `{{s2s_client_secret}}` from the environment.",
+      "item": [
+
+        {
+          "name": "S2S — Health / Connectivity Check (template)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 404 = endpoint not implemented yet (Basic auth was accepted by the filter chain).",
+                  "// 401 = wrong credentials.",
+                  "// 403 = authenticated but missing ROLE_SERVICE.",
+                  "pm.test('Basic auth accepted — not 401', () => {",
+                  "    pm.expect(pm.response.code).to.not.equal(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{s2s_client_id}}", "type": "string" },
+                { "key": "password", "value": "{{s2s_client_secret}}", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{raw_base_url}}/api/internal/health",
+              "host": ["{{raw_base_url}}"],
+              "path": ["api", "internal", "health"]
+            },
+            "description": "Template request showing how a peer service calls an internal endpoint.\n\nCredentials: HTTP Basic using `client-id` / `client-secret` from `auth.service-clients.clients` YAML config.\n\nExpected response until an `/api/internal/health` controller is added: **404 Not Found** (security passed, no handler registered)."
+          }
+        },
+
+        {
+          "name": "S2S — Token Validation (template)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Basic auth accepted — not 401', () => {",
+                  "    pm.expect(pm.response.code).to.not.equal(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{s2s_client_id}}", "type": "string" },
+                { "key": "password", "value": "{{s2s_client_secret}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{access_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{raw_base_url}}/api/internal/validate",
+              "host": ["{{raw_base_url}}"],
+              "path": ["api", "internal", "validate"]
+            },
+            "description": "Template for a future token-validation endpoint that peer services would call to verify a user JWT without holding the RSA public key themselves.\n\nReturns 404 until the controller is implemented under `/api/internal/validate`."
+          }
+        }
+
+      ]
+    },
+
+    {
+      "name": "Authentication",
+      "description": "Login, logout, token refresh, and password management",
+      "item": [
+
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set('access_token', json.accessToken);",
+                  "    pm.environment.set('refresh_token', json.refreshToken);",
+                  "    pm.environment.set('logged_in_username', json.username);",
+                  "    console.log('Tokens captured for user:', json.username);",
+                  "}",
+                  "",
+                  "pm.test('Response has accessToken', () => {",
+                  "    pm.expect(pm.response.json().accessToken).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\",\n  \"rememberMe\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Authenticates a user and captures `access_token` + `refresh_token` into environment variables automatically."
+          }
+        },
+
+        {
+          "name": "Login (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set('access_token', json.accessToken);",
+                  "    pm.environment.set('refresh_token', json.refreshToken);",
+                  "    pm.environment.set('logged_in_username', json.username);",
+                  "    console.log('Admin tokens captured for:', json.username);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\",\n  \"rememberMe\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login as admin and capture tokens. Run this before entitlement endpoints."
+          }
+        },
+
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));",
+                  "",
+                  "if (pm.response.code === 204) {",
+                  "    pm.environment.unset('access_token');",
+                  "    pm.environment.unset('refresh_token');",
+                  "    console.log('Tokens cleared from environment');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "logout"]
+            },
+            "description": "Blacklists the current token in DB and clears auth cookies. Also removes tokens from environment."
+          }
+        },
+
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Swap to refresh_token for this request only",
+                  "pm.request.headers.upsert({",
+                  "    key: 'Authorization',",
+                  "    value: 'Bearer ' + pm.environment.get('refresh_token')",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set('access_token', json.accessToken);",
+                  "    console.log('Access token refreshed');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "refresh"]
+            },
+            "description": "Issues a new access token using the refresh token. Pre-request script swaps the Authorization header to use `{{refresh_token}}`."
+          }
+        },
+
+        {
+          "name": "Forgot Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Always succeeds regardless of email', () => {",
+                  "    pm.expect(pm.response.json().success).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/forgot-password",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "forgot-password"]
+            },
+            "description": "Sends a password-reset link to the email. Always returns 200 to prevent enumeration. Copy the token from the email into `{{reset_token}}`."
+          }
+        },
+
+        {
+          "name": "Reset Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{reset_token}}\",\n  \"newPassword\": \"{{new_password}}\",\n  \"confirmPassword\": \"{{new_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/reset-password",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "reset-password"]
+            },
+            "description": "Validates the one-time reset token and updates the password. Set `{{reset_token}}` from the email link before running."
+          }
+        }
+
+      ]
+    },
+
+    {
+      "name": "User",
+      "description": "Registration, email / phone verification, and profile operations",
+      "item": [
+
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data && json.data.userId) {",
+                  "        pm.environment.set('user_id', json.data.userId);",
+                  "        console.log('Registered user ID:', json.data.userId);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Response is wrapped in ApiResponse', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data).to.have.property('userId');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"John\",\n  \"middleName\": \"Michael\",\n  \"lastName\": \"Doe\",\n  \"userName\": \"johndoe\",\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\",\n  \"retypedPassword\": \"{{user_password}}\",\n  \"phoneCode\": \"+91\",\n  \"contactNumber\": \"9876543210\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user/register",
+              "host": ["{{base_url}}"],
+              "path": ["user", "register"]
+            },
+            "description": "Creates a new user and triggers an email verification. Captures `user_id` automatically."
+          }
+        },
+
+        {
+          "name": "Send Email Verification",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/verify-email/send",
+              "host": ["{{base_url}}"],
+              "path": ["user", "verify-email", "send"]
+            },
+            "description": "Resends the email verification link to the authenticated user. Silent no-op if already verified."
+          }
+        },
+
+        {
+          "name": "Confirm Email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Email verified', () => {",
+                  "    pm.expect(pm.response.json().success).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/verify-email/confirm?token={{verify_token}}",
+              "host": ["{{base_url}}"],
+              "path": ["user", "verify-email", "confirm"],
+              "query": [
+                { "key": "token", "value": "{{verify_token}}", "description": "UUID token from the verification email" }
+              ]
+            },
+            "description": "Confirms email using the one-time token from the verification email. Set `{{verify_token}}` from the email link."
+          }
+        },
+
+        {
+          "name": "Send Phone OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/verify-phone/send",
+              "host": ["{{base_url}}"],
+              "path": ["user", "verify-phone", "send"]
+            },
+            "description": "Generates a 6-digit OTP and dispatches it via Kafka to the SMS service. OTP expires in 5 minutes."
+          }
+        },
+
+        {
+          "name": "Confirm Phone OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user/verify-phone/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["user", "verify-phone", "confirm"]
+            },
+            "description": "Verifies the phone OTP. Set `{{otp}}` to the 6-digit code received via SMS before running."
+          }
+        },
+
+        {
+          "name": "Get My Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Profile returned', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.be.true;",
+                  "    pm.expect(json.data).to.have.property('email');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/me",
+              "host": ["{{base_url}}"],
+              "path": ["user", "me"]
+            },
+            "description": "Returns the authenticated user's profile."
+          }
+        },
+
+        {
+          "name": "Change Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userName\": \"{{logged_in_username}}\",\n  \"oldPassword\": \"{{user_password}}\",\n  \"password\": \"{{new_password}}\",\n  \"reTypePassword\": \"{{new_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user/change-password",
+              "host": ["{{base_url}}"],
+              "path": ["user", "change-password"]
+            },
+            "description": "Changes the authenticated user's password. Requires the current password in `oldPassword`. Set `{{new_password}}` before running."
+          }
+        }
+
+      ]
+    },
+
+    {
+      "name": "Entitlements",
+      "description": "Role and permission management — all operations except GET /entitlements require ADMIN role",
+      "item": [
+
+        {
+          "name": "Get My Roles",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns array', () => {",
+                  "    pm.expect(pm.response.json()).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/entitlements",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements"]
+            },
+            "description": "Returns roles assigned to the currently authenticated user. Available to USER and ADMIN roles."
+          }
+        },
+
+        {
+          "name": "Create Role",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set('role_id', json.id);",
+                  "    console.log('Created role ID:', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleName\": \"ROLE_MANAGER\",\n  \"description\": \"Manager role with limited admin privileges\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/entitlements/roles",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements", "roles"]
+            },
+            "description": "Creates a new role. Captures the new `role_id` automatically. Requires ADMIN."
+          }
+        },
+
+        {
+          "name": "Get All Roles",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns array', () => {",
+                  "    pm.expect(pm.response.json()).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/entitlements/roles",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements", "roles"]
+            },
+            "description": "Lists all roles with their associated permissions. Requires ADMIN."
+          }
+        },
+
+        {
+          "name": "Delete Role",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/entitlements/roles/{{role_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements", "roles", "{{role_id}}"]
+            },
+            "description": "Permanently deletes the role after removing it from all users. Uses `{{role_id}}`. Requires ADMIN."
+          }
+        },
+
+        {
+          "name": "Assign Role to User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": {{user_id}},\n  \"roleId\": {{role_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/entitlements/assign-roles",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements", "assign-roles"]
+            },
+            "description": "Links a role to a user. Uses `{{user_id}}` and `{{role_id}}`. Requires ADMIN."
+          }
+        },
+
+        {
+          "name": "Remove Role from User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/entitlements/users/{{user_id}}/roles/{{role_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements", "users", "{{user_id}}", "roles", "{{role_id}}"]
+            },
+            "description": "Unlinks a role from a user without deleting either entity. Requires ADMIN."
+          }
+        },
+
+        {
+          "name": "Create Permission",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.environment.set('permission_id', json.id);",
+                  "    console.log('Created permission ID:', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"READ_ORDERS\",\n  \"description\": \"Allows reading order data\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/entitlements/permissions",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements", "permissions"]
+            },
+            "description": "Creates a new permission. Captures the new `permission_id` automatically. Requires ADMIN."
+          }
+        },
+
+        {
+          "name": "Get All Permissions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns array', () => {",
+                  "    pm.expect(pm.response.json()).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/entitlements/permissions",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements", "permissions"]
+            },
+            "description": "Lists every permission in the system. Requires ADMIN."
+          }
+        },
+
+        {
+          "name": "Delete Permission",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/entitlements/permissions/{{permission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements", "permissions", "{{permission_id}}"]
+            },
+            "description": "Detaches the permission from all roles then deletes it. Uses `{{permission_id}}`. Requires ADMIN."
+          }
+        },
+
+        {
+          "name": "Assign Permission to Role",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleId\": {{role_id}},\n  \"permissionId\": {{permission_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/entitlements/assign-permissions",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements", "assign-permissions"]
+            },
+            "description": "Links a permission to a role. Uses `{{role_id}}` and `{{permission_id}}`. Requires ADMIN."
+          }
+        },
+
+        {
+          "name": "Remove Permission from Role",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/entitlements/roles/{{role_id}}/permissions/{{permission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements", "roles", "{{role_id}}", "permissions", "{{permission_id}}"]
+            },
+            "description": "Unlinks a permission from a role without deleting either entity. Requires ADMIN."
+          }
+        }
+
+      ]
+    },
+
+    {
+      "name": "Error Scenarios",
+      "description": "Negative test cases covering all exception handlers in GlobalExceptionHandler and AuthEntryPoint.\n\nEach request asserts the correct HTTP status, the ApiResponse envelope shape, and (where applicable) the presence of `validationErrors` or `correlationId`.",
+      "item": [
+
+        {
+          "name": "401 — Login with wrong password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('success is false', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success !== undefined ? json.success : false).to.be.false;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"WrongPassword99!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        },
+
+        {
+          "name": "400 — Login with missing password field",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('validationErrors present', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.validationErrors).to.be.an('array').and.not.empty;",
+                  "});",
+                  "pm.test('correlationId echoed', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.correlationId).to.equal('test-correlation-id-001');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Correlation-Id", "value": "test-correlation-id-001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Omits required `password` field. Expects 400 with per-field validationErrors. Also verifies X-Correlation-Id is echoed back in the response body."
+          }
+        },
+
+        {
+          "name": "400 — Malformed JSON body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('message mentions malformed body', () => {",
+                  "    pm.expect(pm.response.json().message.toLowerCase()).to.include('malformed');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ this is not valid json "
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Sends unparseable JSON. Expects HttpMessageNotReadableException → 400."
+          }
+        },
+
+        {
+          "name": "400 — Register with invalid password pattern",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('validationErrors present for password field', () => {",
+                  "    const errors = pm.response.json().validationErrors;",
+                  "    pm.expect(errors).to.be.an('array').and.not.empty;",
+                  "    const pwdErr = errors.find(e => e.field === 'password');",
+                  "    pm.expect(pwdErr).to.not.be.undefined;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"userName\": \"johndoe\",\n  \"email\": \"new@example.com\",\n  \"password\": \"weak\",\n  \"retypedPassword\": \"weak\",\n  \"phoneCode\": \"+91\",\n  \"contactNumber\": \"9876543210\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user/register",
+              "host": ["{{base_url}}"],
+              "path": ["user", "register"]
+            },
+            "description": "Password 'weak' fails the pattern constraint. Expects 400 with a validationError on the `password` field."
+          }
+        },
+
+        {
+          "name": "409 — Register with duplicate email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('success is false', () => {",
+                  "    pm.expect(pm.response.json().success).to.be.false;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"userName\": \"johndoe2\",\n  \"email\": \"{{user_email}}\",\n  \"password\": \"P@ssw0rd1!\",\n  \"retypedPassword\": \"P@ssw0rd1!\",\n  \"phoneCode\": \"+91\",\n  \"contactNumber\": \"9876543210\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user/register",
+              "host": ["{{base_url}}"],
+              "path": ["user", "register"]
+            },
+            "description": "Registers with the same email as an existing user. Expects DuplicateResourceException → 409."
+          }
+        },
+
+        {
+          "name": "401 — Access protected endpoint without token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Response is ApiResponse format', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status');",
+                  "    pm.expect(json).to.have.property('message');",
+                  "    pm.expect(json).to.have.property('timestamp');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/me",
+              "host": ["{{base_url}}"],
+              "path": ["user", "me"]
+            },
+            "description": "Calls a protected endpoint with no token. AuthEntryPoint returns 401 in ApiResponse format."
+          }
+        },
+
+        {
+          "name": "401 — Access protected endpoint with expired/invalid token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "eyJhbGciOiJSUzI1NiJ9.invalid.token", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/me",
+              "host": ["{{base_url}}"],
+              "path": ["user", "me"]
+            },
+            "description": "Sends a structurally invalid JWT. JwtAuthenticationFilter rejects it and the request hits AuthEntryPoint."
+          }
+        },
+
+        {
+          "name": "403 — Access ADMIN endpoint as regular user",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Ensure you are logged in as a regular user (not admin) before running.",
+                  "// Run 'Login' (not 'Login Admin') first."
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('success is false', () => {",
+                  "    pm.expect(pm.response.json().success).to.be.false;",
+                  "});",
+                  "pm.test('message mentions access denied', () => {",
+                  "    pm.expect(pm.response.json().message.toLowerCase()).to.include('access denied');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/entitlements/roles",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements", "roles"]
+            },
+            "description": "Calls an ADMIN-only endpoint while authenticated as ROLE_USER. @PreAuthorize throws AccessDeniedException → 403. Run 'Login' (regular user) before this, not 'Login Admin'."
+          }
+        },
+
+        {
+          "name": "400 — Change password with wrong old password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('message mentions current password', () => {",
+                  "    pm.expect(pm.response.json().message.toLowerCase()).to.include('password');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userName\": \"{{logged_in_username}}\",\n  \"oldPassword\": \"TotallyWrongOldPass1!\",\n  \"password\": \"{{new_password}}\",\n  \"reTypePassword\": \"{{new_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user/change-password",
+              "host": ["{{base_url}}"],
+              "path": ["user", "change-password"]
+            },
+            "description": "Provides an incorrect current password. Expects 401 — AuthenticationException thrown by UserServiceImpl.changePassword()."
+          }
+        },
+
+        {
+          "name": "400 — Change password with mismatched new passwords",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userName\": \"{{logged_in_username}}\",\n  \"oldPassword\": \"{{user_password}}\",\n  \"password\": \"N3wP@ssw0rd!\",\n  \"reTypePassword\": \"DifferentP@ssw0rd!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user/change-password",
+              "host": ["{{base_url}}"],
+              "path": ["user", "change-password"]
+            },
+            "description": "New password and reTypePassword do not match. Expects 400."
+          }
+        },
+
+        {
+          "name": "405 — Wrong HTTP method",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 405', () => pm.response.to.have.status(405));",
+                  "pm.test('message mentions not supported', () => {",
+                  "    pm.expect(pm.response.json().message.toLowerCase()).to.include('not supported');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Sends DELETE to /auth/login which only supports POST. Expects HttpRequestMethodNotSupportedException → 405."
+          }
+        },
+
+        {
+          "name": "404 — Unknown endpoint",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('ApiResponse format returned', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status', 404);",
+                  "    pm.expect(json.success).to.be.false;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/nonexistent-endpoint",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "nonexistent-endpoint"]
+            },
+            "description": "Hits a path with no handler. Expects NoHandlerFoundException → 404 wrapped in ApiResponse."
+          }
+        },
+
+        {
+          "name": "400 — Path variable wrong type (string for Long)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('message mentions type mismatch', () => {",
+                  "    const msg = pm.response.json().message.toLowerCase();",
+                  "    pm.expect(msg).to.satisfy(m => m.includes('type') || m.includes('parameter'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/entitlements/roles/not-a-number",
+              "host": ["{{base_url}}"],
+              "path": ["entitlements", "roles", "not-a-number"]
+            },
+            "description": "Passes a string where a Long roleId is expected. Expects MethodArgumentTypeMismatchException → 400."
+          }
+        },
+
+        {
+          "name": "400 — Missing required query param (verify-email without token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('message mentions missing parameter', () => {",
+                  "    pm.expect(pm.response.json().message.toLowerCase()).to.include('missing');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/verify-email/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["user", "verify-email", "confirm"]
+            },
+            "description": "Calls /verify-email/confirm without the required `token` query param. Expects MissingServletRequestParameterException → 400."
+          }
+        }
+
+      ]
+    },
+
+    {
+      "name": "Filters & Interceptors",
+      "description": "Requests that exercise the cross-cutting filter and interceptor pipeline directly.\n\nExecution order per request:\n1. AuditRequestContextFilter (Servlet Filter @Order 1) — resolves/generates X-Correlation-Id, captures IP + User-Agent into ThreadLocal\n2. Spring Security filter chain — HTTP Basic (Order 1, /api/internal/**) or JWT (Order 2, /api/**)\n3. JwtAuthenticationFilter — validates JWT, checks DB blacklist, sets SecurityContext\n4. ShallowEtagHeaderFilter — computes ETag on response body for GET requests\n5. ClientIpInterceptor (MVC Interceptor) — puts User-Agent in MDC + RequestContext ThreadLocal\n6. DBInterceptor (AOP @Before) — sets DbContextHolder to READ or WRITE before service methods\n7. AuditAspect (AOP @Around @AuditAction) — times the call, persists AuditLog on success/error\n8. ClientIpInterceptor afterCompletion — clears MDC + RequestContext ThreadLocal",
+      "item": [
+
+        {
+          "name": "Filter 1 — AuditRequestContextFilter: X-Correlation-Id echoed in response header",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400 (missing token param — expected)', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('X-Correlation-Id echoed in response HEADER', () => {",
+                  "    const echo = pm.response.headers.get('X-Correlation-Id');",
+                  "    pm.expect(echo).to.equal('filter-test-corr-001');",
+                  "});",
+                  "",
+                  "pm.test('correlationId echoed in response BODY (ApiResponse)', () => {",
+                  "    pm.expect(pm.response.json().correlationId).to.equal('filter-test-corr-001');",
+                  "});",
+                  "",
+                  "pm.test('timestamp field is present in response body', () => {",
+                  "    pm.expect(pm.response.json().timestamp).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [
+              { "key": "X-Correlation-Id", "value": "filter-test-corr-001", "description": "Sent by caller — AuditRequestContextFilter must echo it in both response header and body" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user/verify-email/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["user", "verify-email", "confirm"]
+            },
+            "description": "AuditRequestContextFilter reads X-Correlation-Id from the request header. If present it reuses it; if absent it generates a UUID. Either way it echoes the value back in the response header AND into ApiResponse.correlationId.\n\nThis test uses /verify-email/confirm with no token — guaranteed 400 — so we always get an ApiResponse body to inspect."
+          }
+        },
+
+        {
+          "name": "Filter 1 — AuditRequestContextFilter: auto-generated correlation ID when none sent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('X-Correlation-Id auto-generated in response header', () => {",
+                  "    const echo = pm.response.headers.get('X-Correlation-Id');",
+                  "    pm.expect(echo).to.be.a('string').and.match(",
+                  "        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,",
+                  "        'expected a UUID'",
+                  "    );",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/verify-email/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["user", "verify-email", "confirm"]
+            },
+            "description": "Sends no X-Correlation-Id header. AuditRequestContextFilter generates a UUID and returns it in the response header. Asserts the value is a valid UUID v4 format."
+          }
+        },
+
+        {
+          "name": "Filter 1 — AuditRequestContextFilter: IP extracted from X-Forwarded-For",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The IP is captured into AuditRequestContext and written to the AuditLog.",
+                  "// We cannot directly assert it in the API response but the filter must not throw.",
+                  "pm.test('Request processed without error despite X-Forwarded-For header', () => {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 204, 400, 401]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Forwarded-For", "value": "203.0.113.42, 10.0.0.1", "description": "AuditRequestContextFilter picks the first IP (203.0.113.42) from the comma-separated list" },
+              { "key": "X-Correlation-Id", "value": "ip-forward-test-001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Simulates a request coming through a reverse proxy with X-Forwarded-For. AuditRequestContextFilter reads headers in order: X-Forwarded-For → X-Real-IP → Proxy-Client-IP → WL-Proxy-Client-IP → remoteAddr. The first non-blank IP (203.0.113.42) is stored in AuditRequestContext and written to the audit log."
+          }
+        },
+
+        {
+          "name": "Filter 3 — JwtAuthenticationFilter: header wins over cookie",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// If the header token is valid, the request succeeds even if cookie is absent/wrong.",
+                  "pm.test('Status 200 — header token used, not cookie', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [
+              { "key": "Cookie", "value": "access_token=invalid_cookie_token", "description": "Deliberately wrong cookie — filter must prefer the Authorization header" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user/me",
+              "host": ["{{base_url}}"],
+              "path": ["user", "me"]
+            },
+            "description": "JwtAuthenticationFilter checks Authorization header first, then falls back to the access_token cookie. This test sends a valid Bearer token alongside an invalid cookie. The header must win — request should succeed."
+          }
+        },
+
+        {
+          "name": "Filter 3 — JwtAuthenticationFilter: blacklisted token rejected",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Step: login, capture token, logout (blacklists it), then use it here.",
+                  "// This test is best run as part of a Collection Runner in sequence:",
+                  "//   1. Login → captures access_token",
+                  "//   2. Logout → blacklists the token in DB",
+                  "//   3. This request → uses the now-blacklisted token",
+                  "const token = pm.environment.get('blacklisted_token');",
+                  "if (!token) {",
+                  "    console.warn('Set {{blacklisted_token}} manually: login, copy the token, logout, paste token here.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401 — blacklisted token rejected', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{blacklisted_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/me",
+              "host": ["{{base_url}}"],
+              "path": ["user", "me"]
+            },
+            "description": "Verifies that a token blacklisted via POST /auth/logout cannot be reused.\n\nSetup:\n1. Run 'Login' — copy the access_token into {{blacklisted_token}}\n2. Run 'Logout' — token is persisted to blacklisted_tokens DB table\n3. Run this request — JwtAuthenticationFilter queries DB and rejects it with 401"
+          }
+        },
+
+        {
+          "name": "Filter 4 — ShallowEtagHeaderFilter: ETag generated on GET",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('ETag header present', () => {",
+                  "    pm.expect(pm.response.headers.get('ETag')).to.be.a('string').and.not.empty;",
+                  "});",
+                  "",
+                  "const etag = pm.response.headers.get('ETag');",
+                  "if (etag) {",
+                  "    pm.environment.set('profile_etag', etag);",
+                  "    console.log('Captured ETag:', etag);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/me",
+              "host": ["{{base_url}}"],
+              "path": ["user", "me"]
+            },
+            "description": "ShallowEtagHeaderFilter (registered in WebConfig) computes an MD5-based ETag of the response body for every GET request. The ETag is captured into {{profile_etag}} for the conditional GET test below."
+          }
+        },
+
+        {
+          "name": "Filter 4 — ShallowEtagHeaderFilter: conditional GET returns 304",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 304 Not Modified', () => pm.response.to.have.status(304));",
+                  "pm.test('Response body is empty (304 must have no body)', () => {",
+                  "    pm.expect(pm.response.text()).to.equal('');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "If-None-Match", "value": "{{profile_etag}}", "description": "ETag captured from the previous request — if unchanged, server returns 304 with no body" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user/me",
+              "host": ["{{base_url}}"],
+              "path": ["user", "me"]
+            },
+            "description": "Sends the ETag from the previous GET in the If-None-Match header. ShallowEtagHeaderFilter compares it against the current response — if identical it short-circuits with 304 No Modified and an empty body, saving bandwidth.\n\nRun 'Filter 4 — ETag generated on GET' first to populate {{profile_etag}}."
+          }
+        },
+
+        {
+          "name": "Interceptor 5 — ClientIpInterceptor: User-Agent captured in MDC",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// User-Agent is stored in MDC key 'userAgent' and in RequestContext ThreadLocal.",
+                  "// It appears in log lines as part of the structured log output.",
+                  "// It is also captured in AuditRequestContext for AuditLog entries.",
+                  "// We cannot assert the MDC/log directly from Postman — verify in the server log.",
+                  "pm.test('Request processed (User-Agent accepted by interceptor)', () => {",
+                  "    pm.expect([200, 400, 401]).to.include(pm.response.code);",
+                  "});",
+                  "console.log('Check server logs for: userAgent=PostmanTest/2.0 in the log line for this request');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "User-Agent", "value": "PostmanTest/2.0 (filter-interceptor-test)", "description": "ClientIpInterceptor puts this value into MDC key 'userAgent' and RequestContext ThreadLocal" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Sends a custom User-Agent header. ClientIpInterceptor (preHandle) puts it into:\n- MDC key 'userAgent' → appears in every log line for this request\n- RequestContext.USER_AGENT ThreadLocal → available to any service code\n- AuditRequestContext.userAgent → written to AuditLog entries\n\nVerify in server logs: the log line should contain 'userAgent=PostmanTest/2.0...'"
+          }
+        },
+
+        {
+          "name": "AOP — AuditAspect: audit log created on login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 — AuditAspect ran around the controller method', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "console.log('AuditAspect should have persisted an AuditLog entry:');",
+                  "console.log('  action=USER_LOGIN, type=SECURITY_AUDIT, severity=HIGH, resourceType=AUTH');",
+                  "console.log('  Query: SELECT * FROM user_audit.audit_log WHERE action = \\'USER_LOGIN\\' ORDER BY audit_date DESC LIMIT 1;');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Correlation-Id", "value": "audit-aspect-test-001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "POST /auth/login is annotated with @AuditAction(action='USER_LOGIN', type=SECURITY_AUDIT, severity=HIGH). AuditAspect intercepts it, times the call, captures username/IP/userAgent/requestId from AuditRequestContext, and asynchronously persists an AuditLog row.\n\nVerify: SELECT * FROM user_audit.audit_log WHERE action = 'USER_LOGIN' ORDER BY audit_date DESC LIMIT 1;"
+          }
+        },
+
+        {
+          "name": "AOP — AuditAspect: audit log created on failed login (ERROR status)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401 — exception path of AuditAspect ran', () => {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "console.log('AuditAspect catches the thrown exception and persists:');",
+                  "console.log('  action=USER_LOGIN, status=ERROR, errorMessage=<exception message>');",
+                  "console.log('  Query: SELECT * FROM user_audit.audit_log WHERE action=\\'USER_LOGIN\\' AND status=\\'ERROR\\' ORDER BY audit_date DESC LIMIT 1;');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"WrongPassword1!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "AuditAspect wraps the call in try/catch. On exception it persists the AuditLog with status=ERROR and the truncated exception message. The exception is then re-thrown so GlobalExceptionHandler still returns 401.\n\nVerify: SELECT * FROM user_audit.audit_log WHERE action='USER_LOGIN' AND status='ERROR' ORDER BY audit_date DESC LIMIT 1;"
+          }
+        },
+
+        {
+          "name": "AOP — DBInterceptor: read datasource used for read-only service methods",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 — read pool served this GET', () => pm.response.to.have.status(200));",
+                  "console.log('DBInterceptor set DbContextHolder to READ before the @ReadOnly service method.');",
+                  "console.log('Verify in server logs: HikariCP pool name should be read-pool-dev for this query.');",
+                  "console.log('Log pattern: pool=read-pool-dev or datasource=READ');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/me",
+              "host": ["{{base_url}}"],
+              "path": ["user", "me"]
+            },
+            "description": "GET /user/me → UserServiceImpl.getProfile() which is annotated @ReadOnly. DBInterceptor (@Before) sets DbContextHolder=READ → RoutingDataSource.determineCurrentLookupKey() returns DbType.READ → query goes to read-pool-dev (HikariCP).\n\nVerify in server logs: the Hibernate SQL log line should show pool 'read-pool-dev'."
+          }
+        },
+
+        {
+          "name": "AOP — DBInterceptor: write datasource used for state-changing service methods",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 or 409 (duplicate) — write pool served this POST', () => {",
+                  "    pm.expect([201, 409]).to.include(pm.response.code);",
+                  "});",
+                  "console.log('DBInterceptor set DbContextHolder to WRITE before the @WriteOnly service method.');",
+                  "console.log('Verify in server logs: HikariCP pool name should be write-pool-dev for the INSERT query.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Filter\",\n  \"lastName\": \"Test\",\n  \"userName\": \"filtertest99\",\n  \"email\": \"filtertest99@example.com\",\n  \"password\": \"P@ssw0rd1!\",\n  \"retypedPassword\": \"P@ssw0rd1!\",\n  \"phoneCode\": \"+91\",\n  \"contactNumber\": \"9123456789\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user/register",
+              "host": ["{{base_url}}"],
+              "path": ["user", "register"]
+            },
+            "description": "POST /user/register → UserServiceImpl.register() which is annotated @WriteOnly. DBInterceptor sets DbContextHolder=WRITE → RoutingDataSource routes to write-pool-dev (master DB).\n\nVerify in server logs: the Hibernate INSERT SQL should use pool 'write-pool-dev'."
+          }
+        }
+
+      ]
+    },
+
+    {
+      "name": "Observability",
+      "description": "Actuator, Prometheus metrics, and distributed tracing verification.\n\nTracing: Brave bridge + Zipkin reporter are on the classpath. In dev, `management.tracing.enabled=false` — enable it to see traceId/spanId in logs and spans in Zipkin at http://localhost:9411.",
+      "item": [
+
+        {
+          "name": "Health — Liveness",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is UP', () => {",
+                  "    pm.expect(pm.response.json().status).to.equal('UP');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{raw_base_url}}/actuator/health/liveness",
+              "host": ["{{raw_base_url}}"],
+              "path": ["actuator", "health", "liveness"]
+            },
+            "description": "Kubernetes liveness probe — returns UP when the JVM is running."
+          }
+        },
+
+        {
+          "name": "Health — Readiness",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is UP', () => {",
+                  "    pm.expect(pm.response.json().status).to.equal('UP');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{raw_base_url}}/actuator/health/readiness",
+              "host": ["{{raw_base_url}}"],
+              "path": ["actuator", "health", "readiness"]
+            },
+            "description": "Kubernetes readiness probe — returns UP when DB connections and dependencies are healthy."
+          }
+        },
+
+        {
+          "name": "Health — Full detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('DB component present', () => {",
+                  "    const components = pm.response.json().components;",
+                  "    pm.expect(components).to.have.property('db');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{raw_base_url}}/actuator/health",
+              "host": ["{{raw_base_url}}"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Full health detail including DB, disk, Kafka, and all registered health indicators."
+          }
+        },
+
+        {
+          "name": "Metrics — Prometheus scrape",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JVM metrics present', () => {",
+                  "    pm.expect(pm.response.text()).to.include('jvm_memory_used_bytes');",
+                  "});",
+                  "pm.test('HTTP server metrics present', () => {",
+                  "    pm.expect(pm.response.text()).to.include('http_server_requests');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{raw_base_url}}/actuator/prometheus",
+              "host": ["{{raw_base_url}}"],
+              "path": ["actuator", "prometheus"]
+            },
+            "description": "Prometheus metrics endpoint — scraped by Prometheus at the configured interval. Includes JVM, HTTP, HikariCP, and custom metrics."
+          }
+        },
+
+        {
+          "name": "Info — Build info",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{raw_base_url}}/actuator/info",
+              "host": ["{{raw_base_url}}"],
+              "path": ["actuator", "info"]
+            },
+            "description": "Build info from META-INF/build-info.properties — populated by the spring-boot-maven-plugin build-info goal."
+          }
+        },
+
+        {
+          "name": "Tracing — Correlation ID propagation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400 (validation error — token missing)', () => pm.response.to.have.status(400));",
+                  "pm.test('X-Correlation-Id echoed in response header', () => {",
+                  "    pm.expect(pm.response.headers.get('X-Correlation-Id')).to.equal('trace-test-12345');",
+                  "});",
+                  "pm.test('correlationId echoed in response body', () => {",
+                  "    pm.expect(pm.response.json().correlationId).to.equal('trace-test-12345');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [
+              { "key": "X-Correlation-Id", "value": "trace-test-12345", "description": "Custom correlation ID — must be echoed back in both response header and body" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user/verify-email/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["user", "verify-email", "confirm"]
+            },
+            "description": "Sends a request with a custom X-Correlation-Id header. AuditRequestContextFilter should echo it back in both the response header and the ApiResponse.correlationId field. Uses /verify-email/confirm (no token → guaranteed 400) so we get an ApiResponse body to inspect."
+          }
+        }
+
+      ]
+    }
+
+  ]
+}

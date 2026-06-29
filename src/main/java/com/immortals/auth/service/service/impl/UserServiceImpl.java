@@ -4,11 +4,13 @@ import com.immortals.auth.service.db.annotation.ReadOnly;
 import com.immortals.auth.service.db.annotation.WriteOnly;
 import com.immortals.auth.service.domain.dto.RegisterRequestDTO;
 import com.immortals.auth.service.domain.dto.RegisterResponseDTO;
+import com.immortals.auth.service.domain.dto.ResetCredentials;
+import com.immortals.auth.service.domain.dto.UserResponseDTO;
 import com.immortals.auth.service.domain.entity.User;
 import com.immortals.auth.service.domain.entity.VerificationToken;
+import com.immortals.auth.service.event.NotificationEventPublisher;
 import com.immortals.auth.service.repository.UserRepository;
 import com.immortals.auth.service.repository.VerificationTokenRepository;
-import com.immortals.auth.service.service.EmailService;
 import com.immortals.auth.service.service.OtpService;
 import com.immortals.auth.service.service.UserService;
 import com.immortals.auth.service.service.exception.AuthenticationException;
@@ -17,6 +19,7 @@ import com.immortals.auth.service.service.exception.ResourceNotFoundException;
 import com.immortals.auth.service.service.exception.UserException;
 import com.immortals.logging.api.ILogger;
 import com.immortals.logging.core.LogManager;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -28,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -37,19 +41,22 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final VerificationTokenRepository verificationTokenRepository;
-    private final EmailService emailService;
     private final OtpService otpService;
+    private final NotificationEventPublisher eventPublisher;
+
+    @Value("${auth.base-url:http://localhost:8080}")
+    private String baseUrl;
 
     public UserServiceImpl(UserRepository userRepository,
                            PasswordEncoder passwordEncoder,
                            VerificationTokenRepository verificationTokenRepository,
-                           EmailService emailService,
-                           OtpService otpService) {
+                           OtpService otpService,
+                           NotificationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.verificationTokenRepository = verificationTokenRepository;
-        this.emailService = emailService;
         this.otpService = otpService;
+        this.eventPublisher = eventPublisher;
     }
 
     @WriteOnly
@@ -125,7 +132,7 @@ public class UserServiceImpl implements UserService {
         }
 
         triggerEmailVerification(user);
-        log.info("Verification email re-sent for '{}'.", username);
+        log.info("Verification email event published for '{}'.", username);
     }
 
     @WriteOnly
@@ -147,7 +154,8 @@ public class UserServiceImpl implements UserService {
         log.info("Email verified for user id={}.", vt.user().getId());
     }
 
-    @ReadOnly
+    @WriteOnly
+    @Transactional(isolation = Isolation.READ_COMMITTED, propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
     @Override
     public void sendPhoneOtp() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -159,8 +167,9 @@ public class UserServiceImpl implements UserService {
             return;
         }
 
-        otpService.generateAndSend(user.contactNumber());
-        log.info("OTP dispatch triggered for user '{}'.", username);
+        String otp = otpService.generate(user.contactNumber());
+        eventPublisher.publishOtpRequested(user.contactNumber(), otp, OtpServiceImpl.OTP_TTL_SECONDS);
+        log.info("OTP event published for user '{}'.", username);
     }
 
     @WriteOnly
@@ -179,6 +188,43 @@ public class UserServiceImpl implements UserService {
         log.info("Phone number verified for user '{}'.", username);
     }
 
+    @ReadOnly
+    @Override
+    public UserResponseDTO getProfile() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        User user = userRepository.findByUserName(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        String fullName = Stream.of(user.firstName(), user.middleName(), user.lastName())
+                .filter(s -> s != null && !s.isBlank())
+                .collect(java.util.stream.Collectors.joining(" "));
+
+        String phoneNumber = (user.phoneCode() != null ? user.phoneCode() : "")
+                + (user.contactNumber() != null ? user.contactNumber() : "");
+
+        return new UserResponseDTO(user.getId(), fullName, user.email(), null, phoneNumber.isBlank() ? null : phoneNumber);
+    }
+
+    @WriteOnly
+    @Transactional(isolation = Isolation.READ_COMMITTED, propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
+    @Override
+    public void changePassword(ResetCredentials credentials) {
+        if (!credentials.password().equals(credentials.reTypePassword())) {
+            throw new UserException("Passwords do not match");
+        }
+
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        User user = userRepository.findByUserName(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (!passwordEncoder.matches(credentials.oldPassword(), user.password())) {
+            throw new AuthenticationException("Current password is incorrect");
+        }
+
+        userRepository.updatePassword(user.getId(), passwordEncoder.encode(credentials.password()));
+        log.info("Password changed for user '{}'.", username);
+    }
+
     private void triggerEmailVerification(User user) {
         verificationTokenRepository.deleteByUserAndType(user, VerificationToken.TokenType.EMAIL_VERIFICATION);
 
@@ -191,6 +237,8 @@ public class UserServiceImpl implements UserService {
                 .build();
         verificationTokenRepository.save(vt);
 
-        emailService.sendEmailVerification(user.email(), tokenValue);
+        String link = baseUrl + "/api/v1/user/verify-email/confirm?token=" + tokenValue;
+        eventPublisher.publishEmailVerification(user.email(), link);
     }
 }
+

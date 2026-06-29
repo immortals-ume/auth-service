@@ -3,10 +3,10 @@ openapi: 3.1.0
 info:
   title: Auth Service API
   description: |
-    Authentication and Authorization Service for Shopwire.
+    Authentication and Authorization Service.
 
     Provides JWT-based authentication (RSA-signed via nimbus-jose-jwt), RBAC with
-    roles and permissions, cookie-based token delivery, and token blacklisting.
+    roles and permissions, cookie-based token delivery, and DB-backed token blacklisting.
 
     ## Authentication
     On a successful login, access and refresh tokens are returned **both** in the
@@ -14,7 +14,18 @@ info:
     - Browser clients: cookies are sent automatically.
     - Non-browser clients: pass `Authorization: Bearer <access_token>`.
 
-    The `JwtAuthenticationFilter` accepts both sources; cookies take precedence.
+    The `JwtAuthenticationFilter` accepts both sources; the `Authorization` header
+    is checked first, then the `access_token` cookie.
+
+    ## Token Refresh
+    When `rememberMe: true`, a `refresh_token` cookie is also issued.
+    Call `POST /auth/refresh` with that cookie to silently obtain a new access token
+    without re-entering credentials.
+
+    ## Password Reset Flow
+    1. `POST /auth/forgot-password` → server emails a link to the **frontend** page.
+    2. User opens the link, enters a new password, frontend calls
+       `POST /auth/reset-password` with the token from the link.
 
     ## Correlation IDs
     Optionally include `X-Correlation-Id: <uuid>` in any request. The same value
@@ -48,521 +59,21 @@ servers:
 
 tags:
   - name: Authentication
-    description: Login and logout
+    description: Login, logout, token refresh, and password management
   - name: User
-    description: User self-registration
+    description: Registration, email / phone verification, and profile operations
   - name: Entitlements
     description: |
-      Role and permission management.
-      Most operations require the `ADMIN` role; `GET /entitlements` is available
-      to any authenticated user (`USER` or `ADMIN`).
+      Role and permission management (RBAC).
+      `GET /entitlements` is available to any authenticated user (`USER` or `ADMIN`).
+      All other operations require the `ADMIN` role.
 
-paths:
-
-  # ── Auth ─────────────────────────────────────────────────────────────────────
-
-  /auth/login:
-    post:
-      tags: [ Authentication ]
-      summary: Login
-      operationId: login
-      description: |
-        Authenticates a user. At least one of `userName`, `email`, or
-        `mobileNumber` must be supplied along with `password`.
-
-        On success, `HttpOnly; Secure; SameSite=Strict` cookies named
-        `access_token` and `refresh_token` are set on the response. The same
-        token strings are also present in the body for non-browser clients.
-      security: [ ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
-            examples:
-              byUsername:
-                summary: Login with username
-                value:
-                  userName: johndoe
-                  password: "P@ssw0rd1!"
-                  rememberMe: false
-              byEmail:
-                summary: Login with email
-                value:
-                  email: john.doe@example.com
-                  password: "P@ssw0rd1!"
-                  rememberMe: true
-              socialLogin:
-                summary: Social / OAuth2 login
-                value:
-                  email: john.doe@example.com
-                  password: ""
-                  authProvider: GOOGLE
-      responses:
-        '200':
-          description: Authentication successful
-          headers:
-            Set-Cookie:
-              description: |
-                Sets two cookies — `access_token` (short-lived) and
-                `refresh_token` (long-lived). Both are `HttpOnly; Secure;
-                SameSite=Strict`.
-              schema:
-                type: string
-                example: "access_token=eyJ...; Path=/; HttpOnly; Secure; SameSite=Strict"
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResponse'
-              example:
-                username: johndoe
-                accessToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-                refreshToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-                message: Login successful
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /auth/logout:
-    post:
-      tags: [ Authentication ]
-      summary: Logout
-      operationId: logout
-      description: |
-        Blacklists the current access token (in-memory `ConcurrentHashMap`) and
-        clears the auth cookies by setting `Max-Age=0`.
-
-        Supply either the `access_token` cookie (browser) or the
-        `Authorization: Bearer` header (API client).
-      security:
-        - cookieAuth: [ ]
-        - bearerAuth: [ ]
-      responses:
-        '204':
-          description: Logged out. Auth cookies are expired.
-          headers:
-            Set-Cookie:
-              description: Cookie cleared with Max-Age=0
-              schema:
-                type: string
-                example: "access_token=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  # ── User ─────────────────────────────────────────────────────────────────────
-
-  /user/register:
-    post:
-      tags: [ User ]
-      summary: Register a new user
-      operationId: register
-      description: |
-        Creates a new user account. No authentication required.
-
-        **Password rules** (enforced by `@Pattern`):
-        - 8 – 64 characters
-        - At least one uppercase letter
-        - At least one lowercase letter
-        - At least one digit
-        - At least one special character from `@$!%*?&`
-
-        **Contact number**: Indian mobile format — `[6-9]\d{9}` optionally
-        prefixed with `+91`.
-      security: [ ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterRequest'
-            example:
-              firstName: John
-              middleName: Michael
-              lastName: Doe
-              userName: johndoe
-              email: john.doe@example.com
-              password: "P@ssw0rd1!"
-              retypedPassword: "P@ssw0rd1!"
-              phoneCode: "+91"
-              contactNumber: "9876543210"
-      responses:
-        '201':
-          description: User created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiResponse_RegisterResponse'
-              example:
-                status: 200
-                statusText: OK
-                success: true
-                data:
-                  userId: 1
-                  username: johndoe
-                  message: User registered successfully
-                message: null
-                errorCode: SUCCESS_001
-                path: null
-                timestamp: "2026-06-14T11:45:00Z"
-                correlationId: null
-                validationErrors: null
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  # ── Entitlements ─────────────────────────────────────────────────────────────
-
-  /entitlements:
-    get:
-      tags: [ Entitlements ]
-      summary: Get roles for the current user
-      operationId: getRolesForUser
-      description: |
-        Returns the roles assigned to the currently authenticated user.
-        Accessible by `USER` and `ADMIN` roles.
-      security:
-        - cookieAuth: [ ]
-        - bearerAuth: [ ]
-      responses:
-        '200':
-          description: User's roles
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/RoleResponse'
-              example:
-                - id: 1
-                  name: USER
-                  description: Standard user role
-                  permissions: [ "READ_PROFILE" ]
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /entitlements/create:
-    post:
-      tags: [ Entitlements ]
-      summary: Create a role
-      operationId: createRole
-      description: |
-        Creates a new role. `roleName` must be unique and ≤ 20 characters.
-
-        **Requires**: `ADMIN` role.
-      security:
-        - cookieAuth: [ ]
-        - bearerAuth: [ ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateRoleRequest'
-            example:
-              roleName: MANAGER
-              description: "Manager role with limited admin privileges"
-              activeInd: true
-      responses:
-        '201':
-          description: Role created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RoleResponse'
-              example:
-                id: 5
-                name: MANAGER
-                description: Manager role with limited admin privileges
-                permissions: [ ]
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          $ref: '#/components/responses/Conflict'
-
-  /entitlements/roles:
-    get:
-      tags: [ Entitlements ]
-      summary: Get all roles
-      operationId: getRoles
-      description: |
-        Returns every role in the system with their associated permissions.
-
-        **Requires**: `ADMIN` role.
-      security:
-        - cookieAuth: [ ]
-        - bearerAuth: [ ]
-      responses:
-        '200':
-          description: All roles
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/RoleResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /entitlements/roles/{roleId}:
-    delete:
-      tags: [ Entitlements ]
-      summary: Delete a role
-      operationId: deleteRole
-      description: |
-        Permanently deletes a role by ID.
-
-        **Requires**: `ADMIN` role.
-      security:
-        - cookieAuth: [ ]
-        - bearerAuth: [ ]
-      parameters:
-        - $ref: '#/components/parameters/roleId'
-      responses:
-        '204':
-          description: Role deleted
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /entitlements/roles/{roleId}/permissions/{permissionId}:
-    delete:
-      tags: [ Entitlements ]
-      summary: Remove a permission from a role
-      operationId: removePermissionFromRole
-      description: |
-        Unlinks a permission from a role (does not delete either entity).
-
-        **Requires**: `ADMIN` role.
-      security:
-        - cookieAuth: [ ]
-        - bearerAuth: [ ]
-      parameters:
-        - $ref: '#/components/parameters/roleId'
-        - $ref: '#/components/parameters/permissionId'
-      responses:
-        '204':
-          description: Permission unlinked from role
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /entitlements/permissions:
-    get:
-      tags: [ Entitlements ]
-      summary: Get all permissions
-      operationId: getPermissions
-      description: |
-        Returns every permission defined in the system.
-
-        **Requires**: `ADMIN` role.
-      security:
-        - cookieAuth: [ ]
-        - bearerAuth: [ ]
-      responses:
-        '200':
-          description: All permissions
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/PermissionResponse'
-              example:
-                - id: 1
-                  name: READ_ORDERS
-                  description: Allows reading order data
-                - id: 2
-                  name: WRITE_ORDERS
-                  description: Allows creating or modifying orders
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-    post:
-      tags: [ Entitlements ]
-      summary: Create a permission
-      operationId: createPermission
-      description: |
-        Creates a new permission. `name` must be unique.
-
-        **Requires**: `ADMIN` role.
-      security:
-        - cookieAuth: [ ]
-        - bearerAuth: [ ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreatePermissionRequest'
-            example:
-              name: READ_ORDERS
-              description: "Allows reading order data"
-      responses:
-        '201':
-          description: Permission created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PermissionResponse'
-              example:
-                id: 7
-                name: READ_ORDERS
-                description: Allows reading order data
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          $ref: '#/components/responses/Conflict'
-
-  /entitlements/permissions/{permissionId}:
-    delete:
-      tags: [ Entitlements ]
-      summary: Delete a permission
-      operationId: deletePermission
-      description: |
-        Permanently deletes a permission by ID.
-
-        **Requires**: `ADMIN` role.
-      security:
-        - cookieAuth: [ ]
-        - bearerAuth: [ ]
-      parameters:
-        - $ref: '#/components/parameters/permissionId'
-      responses:
-        '204':
-          description: Permission deleted
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /entitlements/assign-roles:
-    post:
-      tags: [ Entitlements ]
-      summary: Assign a role to a user
-      operationId: assignRolesToUser
-      description: |
-        Links an existing role to an existing user.
-
-        **Requires**: `ADMIN` role.
-      security:
-        - cookieAuth: [ ]
-        - bearerAuth: [ ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AssignRoleRequest'
-            example:
-              userId: 42
-              roleId: 3
-      responses:
-        '200':
-          description: Role assigned
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /entitlements/assign-permissions:
-    post:
-      tags: [ Entitlements ]
-      summary: Assign a permission to a role
-      operationId: assignPermissionsToRoles
-      description: |
-        Links an existing permission to an existing role.
-
-        **Requires**: `ADMIN` role.
-      security:
-        - cookieAuth: [ ]
-        - bearerAuth: [ ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AssignPermissionRequest'
-            example:
-              roleId: 3
-              permissionId: 7
-      responses:
-        '200':
-          description: Permission assigned to role
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /entitlements/users/{userId}/roles/{roleId}:
-    delete:
-      tags: [ Entitlements ]
-      summary: Remove a role from a user
-      operationId: removeRoleFromUser
-      description: |
-        Unlinks a role from a user (does not delete either entity).
-
-        **Requires**: `ADMIN` role.
-      security:
-        - cookieAuth: [ ]
-        - bearerAuth: [ ]
-      parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int64
-          description: ID of the user
-          example: 42
-        - $ref: '#/components/parameters/roleId'
-      responses:
-        '204':
-          description: Role removed from user
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+# ---------------------------------------------------------------------------
+# Security schemes (global — endpoints that are public override with security: [])
+# ---------------------------------------------------------------------------
+security:
+  - bearerAuth: []
+  - cookieAuth: []
 
 components:
 
@@ -583,6 +94,9 @@ components:
         `HttpOnly; Secure; SameSite=Strict` cookie set automatically by the browser
         after `POST /auth/login`. No explicit header needed in a browser context.
 
+  # ---------------------------------------------------------------------------
+  # Reusable path parameters
+  # ---------------------------------------------------------------------------
   parameters:
     roleId:
       name: roleId
@@ -591,6 +105,7 @@ components:
       schema:
         type: integer
         format: int64
+        minimum: 1
         example: 3
       description: Unique role identifier
 
@@ -601,10 +116,36 @@ components:
       schema:
         type: integer
         format: int64
+        minimum: 1
         example: 7
       description: Unique permission identifier
 
+    userId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        example: 42
+      description: Unique user identifier
+
+  # ---------------------------------------------------------------------------
+  # Schemas
+  # ---------------------------------------------------------------------------
   schemas:
+
+    # ── Enums ─────────────────────────────────────────────────────────────────
+
+    AuthProvider:
+      type: string
+      description: Identity provider used during authentication
+      enum:
+        - FORM_LOGIN
+        - GMAIL
+        - GITHUB
+      example: FORM_LOGIN
 
     # ── Request bodies ────────────────────────────────────────────────────────
 
@@ -613,53 +154,87 @@ components:
       description: |
         At least one identity field (`userName`, `email`, or `mobileNumber`)
         must be provided together with `password`.
+      required:
+        - password
       properties:
         userName:
           type: string
-          description: Username (mutually exclusive with `email` / `mobileNumber`)
+          description: Username — alternative to `email` / `mobileNumber`
           example: johndoe
         email:
           type: string
           format: email
-          description: Email address
+          description: Email address — alternative to `userName` / `mobileNumber`
           example: john.doe@example.com
         mobileNumber:
           type: string
-          description: Mobile number
+          description: Mobile number — alternative to `userName` / `email`
           example: "9876543210"
         password:
           type: string
           format: password
-          description: Account password
           example: "P@ssw0rd1!"
         rememberMe:
           type: boolean
-          description: Extend token TTL when true
+          description: When `true`, a long-lived `refresh_token` cookie is also issued
           default: false
         authProvider:
-          type: string
-          description: |
-            OAuth2 provider for social login. Omit (or use `LOCAL`) for
-            standard credential-based login.
-          example: LOCAL
-          enum: [ LOCAL, GOOGLE, GITHUB ]
+          $ref: '#/components/schemas/AuthProvider'
+
+    ForgotPasswordRequest:
+      type: object
       required:
-        - password
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          example: john.doe@example.com
+
+    ResetPasswordRequest:
+      type: object
+      required:
+        - token
+        - newPassword
+        - confirmPassword
+      properties:
+        token:
+          type: string
+          description: UUID token received in the password-reset email link
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 64
+          example: "N3wP@ssw0rd!"
+        confirmPassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 64
+          example: "N3wP@ssw0rd!"
 
     RegisterRequest:
       type: object
+      required:
+        - firstName
+        - lastName
+        - userName
+        - email
+        - password
+        - retypedPassword
+        - phoneCode
+        - contactNumber
       properties:
         firstName:
           type: string
-          description: Given name
           example: John
         middleName:
           type: string
-          description: Middle name (optional)
           example: Michael
         lastName:
           type: string
-          description: Family name
           example: Doe
         userName:
           type: string
@@ -670,7 +245,6 @@ components:
         email:
           type: string
           format: email
-          description: Valid email address
           example: john.doe@example.com
         password:
           type: string
@@ -696,84 +270,109 @@ components:
           pattern: '^(\+91)?[6-9][0-9]{9}$'
           description: Indian mobile number (optional `+91` prefix)
           example: "9876543210"
+
+    VerifyPhoneOtpRequest:
+      type: object
       required:
-        - firstName
-        - lastName
+        - otp
+      properties:
+        otp:
+          type: string
+          minLength: 6
+          maxLength: 6
+          pattern: '^\d{6}$'
+          description: 6-digit OTP received via SMS
+          example: "482910"
+
+    ChangePasswordRequest:
+      type: object
+      required:
         - userName
-        - email
+        - oldPassword
         - password
-        - retypedPassword
-        - phoneCode
+        - reTypePassword
+      properties:
+        userName:
+          type: string
+          example: johndoe
+        oldPassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 64
+          description: Current password — must match the stored password
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 64
+          description: New password
+        reTypePassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 64
+          description: Must match `password`
 
     CreateRoleRequest:
       type: object
-      description: Payload to create a new role.
+      required:
+        - roleName
       properties:
         roleName:
           type: string
           maxLength: 20
           description: Unique role name (≤ 20 characters)
-          example: MANAGER
+          example: ROLE_MANAGER
         description:
           type: string
           maxLength: 200
-          description: Human-readable description
           example: "Manager role with limited admin privileges"
-        activeInd:
-          type: boolean
-          description: Whether the role is active
-          example: true
-      required:
-        - roleName
-        - activeInd
 
     CreatePermissionRequest:
       type: object
+      required:
+        - name
       properties:
         name:
           type: string
+          maxLength: 50
           description: Unique permission name
           example: READ_ORDERS
         description:
           type: string
-          description: Human-readable description (optional)
+          maxLength: 200
           example: "Allows reading order data"
-      required:
-        - name
 
     AssignRoleRequest:
       type: object
+      required:
+        - userId
+        - roleId
       properties:
         userId:
           type: integer
           format: int64
-          description: ID of the target user
           example: 42
         roleId:
           type: integer
           format: int64
-          description: ID of the role to assign
           example: 3
-      required:
-        - userId
-        - roleId
 
     AssignPermissionRequest:
       type: object
+      required:
+        - roleId
+        - permissionId
       properties:
         roleId:
           type: integer
           format: int64
-          description: ID of the target role
           example: 3
         permissionId:
           type: integer
           format: int64
-          description: ID of the permission to assign
           example: 7
-      required:
-        - roleId
-        - permissionId
 
     # ── Response bodies ───────────────────────────────────────────────────────
 
@@ -786,11 +385,11 @@ components:
           example: johndoe
         accessToken:
           type: string
-          description: Short-lived RSA-signed JWT (RS256)
+          description: Short-lived RSA-signed JWT (RS256); also set as `access_token` cookie
           example: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
         refreshToken:
           type: string
-          description: Long-lived refresh JWT
+          description: Long-lived refresh JWT; set as `refresh_token` cookie when `rememberMe` is true
           example: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
         message:
           type: string
@@ -803,14 +402,37 @@ components:
         userId:
           type: integer
           format: int64
-          description: Generated user ID
           example: 1
         username:
           type: string
           example: johndoe
         message:
           type: string
-          example: User registered successfully
+          example: Registration successful
+
+    UserProfile:
+      type: object
+      description: Authenticated user's profile
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        fullName:
+          type: string
+          example: John Michael Doe
+        email:
+          type: string
+          format: email
+          example: john.doe@example.com
+        address:
+          type: string
+          nullable: true
+          example: null
+        phoneNumber:
+          type: string
+          nullable: true
+          example: "+919876543210"
 
     RoleResponse:
       type: object
@@ -822,16 +444,16 @@ components:
           example: 1
         name:
           type: string
-          example: ADMIN
+          example: ROLE_ADMIN
         description:
           type: string
           example: Full administrative access
         permissions:
           type: array
-          description: Set of permission names linked to this role
+          uniqueItems: true
           items:
             type: string
-          example: [ "READ_ORDERS", "WRITE_ORDERS", "MANAGE_USERS" ]
+          example: ["READ_ORDERS", "WRITE_ORDERS", "MANAGE_USERS"]
 
     PermissionResponse:
       type: object
@@ -852,13 +474,10 @@ components:
 
     ApiResponse_RegisterResponse:
       type: object
-      description: |
-        Standard `ApiResponse<RegisterResponse>` envelope returned by
-        `POST /user/register`.
+      description: Standard `ApiResponse<RegisterResponse>` envelope
       properties:
         status:
           type: integer
-          description: HTTP status code
           example: 200
         statusText:
           type: string
@@ -883,7 +502,7 @@ components:
         timestamp:
           type: string
           format: date-time
-          example: "2026-06-14T11:45:00Z"
+          example: "2026-06-28T10:00:00Z"
         correlationId:
           type: string
           nullable: true
@@ -895,13 +514,85 @@ components:
             $ref: '#/components/schemas/ValidationError'
           example: null
 
+    ApiResponse_UserProfile:
+      type: object
+      description: Standard `ApiResponse<UserProfile>` envelope
+      properties:
+        status:
+          type: integer
+          example: 200
+        statusText:
+          type: string
+          example: OK
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/UserProfile'
+        message:
+          type: string
+          nullable: true
+        errorCode:
+          type: string
+          nullable: true
+        path:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          nullable: true
+        validationErrors:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ValidationError'
+
+    ApiResponse_Void:
+      type: object
+      description: Standard `ApiResponse<Void>` envelope for operations that return a message but no data
+      properties:
+        status:
+          type: integer
+          example: 200
+        statusText:
+          type: string
+          example: OK
+        success:
+          type: boolean
+          example: true
+        data:
+          nullable: true
+          example: null
+        message:
+          type: string
+          example: "If that email is registered, a reset link has been sent."
+        errorCode:
+          type: string
+          nullable: true
+        path:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          nullable: true
+        validationErrors:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ValidationError'
+
     ErrorResponse:
       type: object
       description: Standard error envelope returned for all 4xx / 5xx responses
       properties:
         status:
           type: integer
-          description: HTTP status code
           example: 400
         statusText:
           type: string
@@ -943,7 +634,7 @@ components:
         timestamp:
           type: string
           format: date-time
-          example: "2026-06-14T11:45:00Z"
+          example: "2026-06-28T10:00:00Z"
         correlationId:
           type: string
           nullable: true
@@ -962,15 +653,12 @@ components:
       properties:
         field:
           type: string
-          description: Name of the failing field
           example: email
         rejectedValue:
           nullable: true
-          description: The value that was rejected
           example: "not-an-email"
         message:
           type: string
-          description: Human-readable constraint message
           example: Email is not in correct format
         code:
           type: string
@@ -978,6 +666,9 @@ components:
           description: Constraint annotation name (e.g. `Email`, `NotBlank`)
           example: Email
 
+  # ---------------------------------------------------------------------------
+  # Reusable responses
+  # ---------------------------------------------------------------------------
   responses:
 
     BadRequest:
@@ -996,7 +687,7 @@ components:
             message: Validation failed
             errorCode: VAL_003
             path: /api/v1/user/register
-            timestamp: "2026-06-14T11:45:00Z"
+            timestamp: "2026-06-28T10:00:00Z"
             correlationId: null
             validationErrors:
               - field: email
@@ -1010,8 +701,8 @@ components:
 
     Unauthorized:
       description: |
-        **401 Unauthorized** — no token supplied, token is expired, or credentials
-        are incorrect. Error code is one of `AUTH_001` – `AUTH_005`.
+        **401 Unauthorized** — no token supplied, token expired, credentials
+        incorrect, or OTP invalid. Error code is one of `AUTH_001` – `AUTH_005`.
       content:
         application/json:
           schema:
@@ -1021,10 +712,10 @@ components:
             statusText: Unauthorized
             success: false
             data: null
-            message: Invalid credentials
+            message: Authentication failed. Please check your credentials.
             errorCode: AUTH_001
             path: /api/v1/auth/login
-            timestamp: "2026-06-14T11:45:00Z"
+            timestamp: "2026-06-28T10:00:00Z"
             correlationId: null
             validationErrors: null
 
@@ -1043,8 +734,8 @@ components:
             data: null
             message: Access denied
             errorCode: SEC_001
-            path: /api/v1/entitlements/create
-            timestamp: "2026-06-14T11:45:00Z"
+            path: /api/v1/entitlements/roles
+            timestamp: "2026-06-28T10:00:00Z"
             correlationId: null
             validationErrors: null
 
@@ -1064,7 +755,7 @@ components:
             message: Role not found
             errorCode: RES_001
             path: /api/v1/entitlements/roles/999
-            timestamp: "2026-06-14T11:45:00Z"
+            timestamp: "2026-06-28T10:00:00Z"
             correlationId: null
             validationErrors: null
 
@@ -1081,10 +772,10 @@ components:
             statusText: Conflict
             success: false
             data: null
-            message: User already exists
+            message: Email already registered
             errorCode: USER_002
             path: /api/v1/user/register
-            timestamp: "2026-06-14T11:45:00Z"
+            timestamp: "2026-06-28T10:00:00Z"
             correlationId: null
             validationErrors: null
 
@@ -1104,6 +795,867 @@ components:
             message: Something went wrong. Please try again later.
             errorCode: TECH_004
             path: /api/v1/auth/login
-            timestamp: "2026-06-14T11:45:00Z"
+            timestamp: "2026-06-28T10:00:00Z"
             correlationId: null
             validationErrors: null
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+paths:
+
+  # ── Authentication ─────────────────────────────────────────────────────────
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Login
+      operationId: login
+      description: |
+        Authenticates a user. At least one of `userName`, `email`, or
+        `mobileNumber` must be supplied along with `password`.
+
+        On success, `HttpOnly; Secure; SameSite=Strict` cookies named
+        `access_token` and (when `rememberMe: true`) `refresh_token` are set.
+        The same token strings are also present in the body for non-browser clients.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              byEmail:
+                summary: Login with email
+                value:
+                  email: john.doe@example.com
+                  password: "P@ssw0rd1!"
+                  rememberMe: true
+              byUsername:
+                summary: Login with username
+                value:
+                  userName: johndoe
+                  password: "P@ssw0rd1!"
+                  rememberMe: false
+      responses:
+        '200':
+          description: Authentication successful
+          headers:
+            Set-Cookie:
+              description: |
+                `access_token=<jwt>; Path=/; HttpOnly; Secure; SameSite=Strict`
+                (plus `refresh_token=...` when `rememberMe: true`)
+              schema:
+                type: string
+                example: "access_token=eyJ...; Path=/; HttpOnly; Secure; SameSite=Strict"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              example:
+                username: johndoe
+                accessToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+                refreshToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+                message: Login successful
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Logout
+      operationId: logout
+      description: |
+        Blacklists both the access and refresh tokens (stored in the DB) and
+        clears the auth cookies by setting `Max-Age=0`. Safe to call without
+        a valid session — it is a no-op if no token is present.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+        - {}
+      responses:
+        '204':
+          description: Logged out. Auth cookies are expired.
+          headers:
+            Set-Cookie:
+              description: Both auth cookies cleared with Max-Age=0
+              schema:
+                type: string
+                example: "access_token=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Refresh access token
+      operationId: refreshToken
+      description: |
+        Uses the `refresh_token` cookie to issue a new `access_token` cookie
+        and returns the new token in the response body. The refresh token itself
+        is **not** rotated — it remains valid until it expires or the user logs out.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: New access token issued
+          headers:
+            Set-Cookie:
+              description: New `access_token` cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              example:
+                username: johndoe
+                accessToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+                refreshToken: ""
+                message: Token refreshed
+        '401':
+          description: Refresh token missing, expired, or revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 401
+                success: false
+                message: Refresh token is invalid or expired
+                errorCode: AUTH_002
+                timestamp: "2026-06-28T10:00:00Z"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/forgot-password:
+    post:
+      tags: [Authentication]
+      summary: Request a password-reset email
+      operationId: forgotPassword
+      description: |
+        Sends a password-reset link to the registered email address.
+        The link points to the **frontend** reset page with a one-time token
+        as a query parameter (`?token=<uuid>`).
+
+        Always returns `200` regardless of whether the email is registered —
+        this prevents email enumeration attacks.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+            example:
+              email: john.doe@example.com
+      responses:
+        '200':
+          description: Request accepted (response is identical whether the email exists or not)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Void'
+              example:
+                status: 200
+                statusText: OK
+                success: true
+                data: null
+                message: "If that email is registered, a reset link has been sent."
+                timestamp: "2026-06-28T10:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/reset-password:
+    post:
+      tags: [Authentication]
+      summary: Reset password using a one-time token
+      operationId: resetPassword
+      description: |
+        Validates the reset token received via email, checks that both password
+        fields match, updates the user's password, and invalidates the token.
+
+        The token has a 1-hour TTL and can only be used once.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+            example:
+              token: "550e8400-e29b-41d4-a716-446655440000"
+              newPassword: "N3wP@ssw0rd!"
+              confirmPassword: "N3wP@ssw0rd!"
+      responses:
+        '204':
+          description: Password reset successfully
+        '400':
+          description: Passwords do not match or validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 400
+                success: false
+                message: Passwords do not match
+                errorCode: BUS_001
+                timestamp: "2026-06-28T10:00:00Z"
+        '401':
+          description: Reset token expired or already used
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 401
+                success: false
+                message: Reset token has expired or already been used
+                errorCode: AUTH_005
+                timestamp: "2026-06-28T10:00:00Z"
+        '404':
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ── User ───────────────────────────────────────────────────────────────────
+
+  /user/register:
+    post:
+      tags: [User]
+      summary: Register a new user
+      operationId: register
+      description: |
+        Creates a new user account and immediately sends an email verification
+        link to the provided address. The account is active straight away but
+        `emailVerified` and `phoneNumberVerified` remain `false` until confirmed.
+
+        **Password rules** (enforced by `@Pattern`):
+        - 8–64 characters
+        - At least one uppercase, one lowercase, one digit, one special character (`@$!%*?&`)
+
+        **Contact number**: Indian mobile format — `[6-9]\d{9}`, optionally
+        prefixed with `+91`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              firstName: John
+              middleName: Michael
+              lastName: Doe
+              userName: johndoe
+              email: john.doe@example.com
+              password: "P@ssw0rd1!"
+              retypedPassword: "P@ssw0rd1!"
+              phoneCode: "+91"
+              contactNumber: "9876543210"
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_RegisterResponse'
+              example:
+                status: 200
+                statusText: OK
+                success: true
+                data:
+                  userId: 1
+                  username: johndoe
+                  message: Registration successful
+                message: null
+                errorCode: SUCCESS_001
+                path: null
+                timestamp: "2026-06-28T10:00:00Z"
+                correlationId: null
+                validationErrors: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /user/verify-email/send:
+    post:
+      tags: [User]
+      summary: Resend email verification link
+      operationId: sendEmailVerification
+      description: |
+        Generates a fresh email verification token (invalidating any previous one)
+        and sends the link to the authenticated user's address. Silent no-op if
+        email is already verified. Token TTL: 24 hours.
+      responses:
+        '204':
+          description: Verification email dispatched (or already verified — silent no-op)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /user/verify-email/confirm:
+    get:
+      tags: [User]
+      summary: Confirm email using the verification link token
+      operationId: verifyEmail
+      description: |
+        Validates the one-time token from the verification email, marks the email
+        as verified, and invalidates the token. Intended to be called directly by
+        the browser when the user clicks the link.
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          description: UUID verification token from the email link
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Email verified successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Void'
+              example:
+                status: 200
+                success: true
+                message: Email verified successfully
+                timestamp: "2026-06-28T10:00:00Z"
+        '400':
+          description: Missing or blank token parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token expired or already used
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 401
+                success: false
+                message: Verification token has expired or already been used
+                errorCode: AUTH_005
+                timestamp: "2026-06-28T10:00:00Z"
+        '404':
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /user/verify-phone/send:
+    post:
+      tags: [User]
+      summary: Send OTP for phone number verification
+      operationId: sendPhoneOtp
+      description: |
+        Generates a 6-digit OTP, stores it in the database, and dispatches it via
+        Kafka to the SMS notification service. OTP expires after **5 minutes**.
+        Silent no-op if the phone is already verified.
+      responses:
+        '204':
+          description: OTP dispatched (or phone already verified — silent no-op)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /user/verify-phone/confirm:
+    post:
+      tags: [User]
+      summary: Verify phone number with the received OTP
+      operationId: verifyPhoneOtp
+      description: |
+        Validates the 6-digit OTP generated by `POST /user/verify-phone/send`.
+        Marks the phone number as verified and immediately invalidates the OTP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyPhoneOtpRequest'
+            example:
+              otp: "482910"
+      responses:
+        '204':
+          description: Phone number verified successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid or expired OTP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 401
+                success: false
+                message: Invalid or expired OTP
+                errorCode: AUTH_005
+                timestamp: "2026-06-28T10:00:00Z"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /user/me:
+    get:
+      tags: [User]
+      summary: Get the authenticated user's profile
+      operationId: getProfile
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_UserProfile'
+              example:
+                status: 200
+                statusText: OK
+                success: true
+                data:
+                  id: 1
+                  fullName: John Michael Doe
+                  email: john.doe@example.com
+                  address: null
+                  phoneNumber: "+919876543210"
+                timestamp: "2026-06-28T10:00:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /user/change-password:
+    put:
+      tags: [User]
+      summary: Change the authenticated user's password
+      operationId: changePassword
+      description: |
+        Requires the user's **current** password (`oldPassword`). Both `password`
+        and `reTypePassword` must match. The change takes effect immediately.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+            example:
+              userName: johndoe
+              oldPassword: "P@ssw0rd1!"
+              password: "N3wP@ssw0rd!"
+              reTypePassword: "N3wP@ssw0rd!"
+      responses:
+        '204':
+          description: Password changed successfully
+        '400':
+          description: New passwords do not match or validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 400
+                success: false
+                message: Passwords do not match
+                errorCode: BUS_001
+                timestamp: "2026-06-28T10:00:00Z"
+        '401':
+          description: Not authenticated or current password is incorrect
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: 401
+                success: false
+                message: Current password is incorrect
+                errorCode: AUTH_001
+                timestamp: "2026-06-28T10:00:00Z"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ── Entitlements ───────────────────────────────────────────────────────────
+
+  /entitlements:
+    get:
+      tags: [Entitlements]
+      summary: Get roles assigned to the current user
+      operationId: getRolesForUser
+      description: |
+        Returns the roles assigned to the currently authenticated user.
+        Accessible by both `USER` and `ADMIN` roles.
+      responses:
+        '200':
+          description: Roles assigned to the authenticated user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleResponse'
+              example:
+                - id: 1
+                  name: ROLE_USER
+                  description: Standard user role
+                  permissions: ["READ_PROFILE"]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /entitlements/roles:
+    post:
+      tags: [Entitlements]
+      summary: Create a role
+      operationId: createRole
+      description: |
+        Creates a new role. `roleName` must be unique and ≤ 20 characters.
+        **Requires**: `ADMIN` role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
+            example:
+              roleName: ROLE_MANAGER
+              description: "Manager role with limited admin privileges"
+      responses:
+        '201':
+          description: Role created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleResponse'
+              example:
+                id: 5
+                name: ROLE_MANAGER
+                description: Manager role with limited admin privileges
+                permissions: []
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    get:
+      tags: [Entitlements]
+      summary: List all roles
+      operationId: getAllRoles
+      description: |
+        Returns every role in the system with their associated permissions.
+        **Requires**: `ADMIN` role.
+      responses:
+        '200':
+          description: All roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /entitlements/roles/{roleId}:
+    delete:
+      tags: [Entitlements]
+      summary: Delete a role
+      operationId: deleteRole
+      description: |
+        Removes the role from all users before permanently deleting it.
+        **Requires**: `ADMIN` role.
+      parameters:
+        - $ref: '#/components/parameters/roleId'
+      responses:
+        '204':
+          description: Role deleted
+        '400':
+          description: roleId must be a positive integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /entitlements/roles/{roleId}/permissions/{permissionId}:
+    delete:
+      tags: [Entitlements]
+      summary: Remove a permission from a role
+      operationId: removePermissionFromRole
+      description: |
+        Unlinks a permission from a role. Neither entity is deleted.
+        **Requires**: `ADMIN` role.
+      parameters:
+        - $ref: '#/components/parameters/roleId'
+        - $ref: '#/components/parameters/permissionId'
+      responses:
+        '204':
+          description: Permission unlinked from role
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Role does not have that permission, or role/permission not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /entitlements/permissions:
+    get:
+      tags: [Entitlements]
+      summary: List all permissions
+      operationId: getAllPermissions
+      description: |
+        Returns every permission defined in the system.
+        **Requires**: `ADMIN` role.
+      responses:
+        '200':
+          description: All permissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PermissionResponse'
+              example:
+                - id: 1
+                  name: READ_ORDERS
+                  description: Allows reading order data
+                - id: 2
+                  name: WRITE_ORDERS
+                  description: Allows creating or modifying orders
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags: [Entitlements]
+      summary: Create a permission
+      operationId: createPermission
+      description: |
+        Creates a new permission. `name` must be unique.
+        **Requires**: `ADMIN` role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePermissionRequest'
+            example:
+              name: READ_ORDERS
+              description: "Allows reading order data"
+      responses:
+        '201':
+          description: Permission created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionResponse'
+              example:
+                id: 7
+                name: READ_ORDERS
+                description: Allows reading order data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /entitlements/permissions/{permissionId}:
+    delete:
+      tags: [Entitlements]
+      summary: Delete a permission
+      operationId: deletePermission
+      description: |
+        Detaches the permission from all roles before permanently deleting it.
+        **Requires**: `ADMIN` role.
+      parameters:
+        - $ref: '#/components/parameters/permissionId'
+      responses:
+        '204':
+          description: Permission deleted
+        '400':
+          description: permissionId must be a positive integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /entitlements/assign-roles:
+    post:
+      tags: [Entitlements]
+      summary: Assign a role to a user
+      operationId: assignRolesToUser
+      description: |
+        Links an existing role to an existing user.
+        **Requires**: `ADMIN` role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRoleRequest'
+            example:
+              userId: 42
+              roleId: 3
+      responses:
+        '204':
+          description: Role assigned to user
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: User or role not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: User already has that role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /entitlements/assign-permissions:
+    post:
+      tags: [Entitlements]
+      summary: Assign a permission to a role
+      operationId: assignPermissionsToRoles
+      description: |
+        Links an existing permission to an existing role.
+        **Requires**: `ADMIN` role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignPermissionRequest'
+            example:
+              roleId: 3
+              permissionId: 7
+      responses:
+        '204':
+          description: Permission assigned to role
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Role or permission not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Role already has that permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /entitlements/users/{userId}/roles/{roleId}:
+    delete:
+      tags: [Entitlements]
+      summary: Remove a role from a user
+      operationId: removeRoleFromUser
+      description: |
+        Unlinks a role from a user. Neither entity is deleted.
+        **Requires**: `ADMIN` role.
+      parameters:
+        - $ref: '#/components/parameters/userId'
+        - $ref: '#/components/parameters/roleId'
+      responses:
+        '204':
+          description: Role removed from user
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: User does not have that role, or user/role not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'

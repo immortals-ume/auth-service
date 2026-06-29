@@ -1,5 +1,14 @@
 HELP.md
 target/
+
+### Secrets — NEVER commit these ###
+*.pem
+*.key
+*.p12
+*.jks
+.env
+*.env
+secrets/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

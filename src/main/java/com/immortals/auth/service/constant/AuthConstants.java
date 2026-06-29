@@ -45,8 +45,8 @@ public final class AuthConstants {
             "/api/v1/auth/logout",
             "/api/v1/auth/refresh",
             "/api/v1/auth/forgot-password",
-            "/api/v1/auth/reset-password",
-            "/api/v1/auth/remember-me/"
+            "/api/v1/auth/reset-password"
     };
 }
+
 

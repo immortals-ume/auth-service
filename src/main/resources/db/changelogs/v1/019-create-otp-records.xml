@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="v1-019-otp-records" author="immortals-ume">
+        <createTable tableName="otp_records" schemaName="user_auth">
+            <column name="phone_number" type="VARCHAR(20)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="otp" type="VARCHAR(6)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="expires_at" type="TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex indexName="idx_otp_expires_at" tableName="otp_records" schemaName="user_auth">
+            <column name="expires_at"/>
+        </createIndex>
+
+        <rollback>
+            <dropTable tableName="otp_records" schemaName="user_auth" cascadeConstraints="true"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

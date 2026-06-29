@@ -1,0 +1,148 @@
+{
+  "id": "auth-service-local-env",
+  "name": "Auth Service - Local Dev",
+  "values": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080/api/v1",
+      "type": "default",
+      "enabled": true,
+      "description": "Base URL including /api/v1 prefix"
+    },
+    {
+      "key": "user_email",
+      "value": "john.doe@example.com",
+      "type": "default",
+      "enabled": true,
+      "description": "Regular user email for login / register"
+    },
+    {
+      "key": "user_password",
+      "value": "P@ssw0rd1!",
+      "type": "secret",
+      "enabled": true,
+      "description": "Regular user password"
+    },
+    {
+      "key": "admin_email",
+      "value": "admin@example.com",
+      "type": "default",
+      "enabled": true,
+      "description": "Admin user email — used for entitlement operations"
+    },
+    {
+      "key": "admin_password",
+      "value": "Admin@123!",
+      "type": "secret",
+      "enabled": true,
+      "description": "Admin user password"
+    },
+    {
+      "key": "new_password",
+      "value": "N3wP@ssw0rd!",
+      "type": "secret",
+      "enabled": true,
+      "description": "New password for change-password and reset-password requests"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "secret",
+      "enabled": true,
+      "description": "JWT access token — auto-populated by Login request test script"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "secret",
+      "enabled": true,
+      "description": "JWT refresh token — auto-populated by Login request test script"
+    },
+    {
+      "key": "logged_in_username",
+      "value": "",
+      "type": "default",
+      "enabled": true,
+      "description": "Username of the currently logged-in user — auto-populated by Login"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "default",
+      "enabled": true,
+      "description": "User ID — auto-populated by Register request test script"
+    },
+    {
+      "key": "role_id",
+      "value": "",
+      "type": "default",
+      "enabled": true,
+      "description": "Role ID — auto-populated by Create Role test script"
+    },
+    {
+      "key": "permission_id",
+      "value": "",
+      "type": "default",
+      "enabled": true,
+      "description": "Permission ID — auto-populated by Create Permission test script"
+    },
+    {
+      "key": "reset_token",
+      "value": "",
+      "type": "secret",
+      "enabled": true,
+      "description": "Password-reset UUID token — copy from the reset email link (?token=<uuid>)"
+    },
+    {
+      "key": "verify_token",
+      "value": "",
+      "type": "secret",
+      "enabled": true,
+      "description": "Email-verification UUID token — copy from the verification email link"
+    },
+    {
+      "key": "otp",
+      "value": "",
+      "type": "default",
+      "enabled": true,
+      "description": "6-digit phone OTP — copy from the SMS received after Send Phone OTP"
+    },
+    {
+      "key": "raw_base_url",
+      "value": "http://localhost:8080",
+      "type": "default",
+      "enabled": true,
+      "description": "Base URL WITHOUT /api/v1 — used for OAuth2 and S2S /api/internal/** paths"
+    },
+    {
+      "key": "s2s_client_id",
+      "value": "catalog-service",
+      "type": "default",
+      "enabled": true,
+      "description": "Service client ID from auth.service-clients.clients config"
+    },
+    {
+      "key": "s2s_client_secret",
+      "value": "catalog-dev-secret",
+      "type": "secret",
+      "enabled": true,
+      "description": "Service client secret — {noop} prefix is stripped, this is the raw plaintext for dev"
+    },
+    {
+      "key": "blacklisted_token",
+      "value": "",
+      "type": "secret",
+      "enabled": true,
+      "description": "A token that has been logged out — copy access_token here, then run Logout, then use this in the blacklist test"
+    },
+    {
+      "key": "profile_etag",
+      "value": "",
+      "type": "default",
+      "enabled": true,
+      "description": "ETag value captured from GET /user/me — auto-populated by the ShallowEtagHeaderFilter ETag test"
+    }
+  ],
+  "_postman_variable_scope": "environment",
+  "timestamp": 1751104800000
+}

@@ -1,6 +1,7 @@
 package com.immortals.auth.service.security.filters;
 
 import com.immortals.auth.service.security.jwt.JwtProvider;
+import com.immortals.auth.service.security.jwt.JwtToken;
 import com.immortals.auth.service.service.CookieService;
 import com.immortals.auth.service.service.TokenBlacklistService;
 import com.immortals.logging.api.ILogger;
@@ -10,7 +11,6 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -20,8 +20,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.text.ParseException;
-import java.util.Collection;
 
 import static com.immortals.auth.service.constant.AuthConstants.HEADER_STRING;
 import static com.immortals.auth.service.constant.AuthConstants.TOKEN_PREFIX;
@@ -30,6 +28,7 @@ import static com.immortals.auth.service.constant.AuthConstants.TOKEN_PREFIX;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final ILogger log = LogManager.getInstance().getLogger(JwtAuthenticationFilter.class);
+
     private final JwtProvider jwtProvider;
     private final UserDetailsService userDetailsService;
     private final CookieService cookieService;
@@ -53,39 +52,35 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         try {
-            String token = extractToken(request);
-
-            if (token != null && jwtProvider.validateToken(token)) {
-
-                String jti = jwtProvider.getJti(token);
-                if (jti != null && tokenBlacklistService.isBlacklisted(jti)) {
-                    log.warn("Rejected blacklisted token (jti={})", jti);
-                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token has been revoked");
-                    return;
-                }
-
-                if (SecurityContextHolder.getContext().getAuthentication() == null) {
-                    String username = jwtProvider.getUsernameFromToken(token);
-                    UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-                    Collection<? extends GrantedAuthority> authorities = userDetails.getAuthorities();
-
-                    UsernamePasswordAuthenticationToken authentication =
-                            new UsernamePasswordAuthenticationToken(
-                                    userDetails,
-                                    null,
-                                    authorities
-                            );
-                    authentication.setDetails(
-                            new WebAuthenticationDetailsSource().buildDetails(request)
-                    );
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
-                }
+            String rawToken = extractToken(request);
+            if (rawToken == null) {
+                filterChain.doFilter(request, response);
+                return;
             }
 
-        } catch (RuntimeException ex) {
+            JwtToken token = jwtProvider.parse(rawToken);
+            if (!token.isValid()) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            String jti = jwtProvider.getJti(rawToken);
+            if (jti != null && tokenBlacklistService.isBlacklisted(jti)) {
+                log.warn("Rejected blacklisted token (jti={})", jti);
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token has been revoked");
+                return;
+            }
+
+            if (SecurityContextHolder.getContext().getAuthentication() == null) {
+                UserDetails userDetails = userDetailsService.loadUserByUsername(token.username());
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            }
+
+        } catch (Exception ex) {
             log.error("JWT authentication failed: {}", ex.getMessage());
-        } catch (ParseException e) {
-            throw new RuntimeException(e);
         }
 
         filterChain.doFilter(request, response);
@@ -99,3 +94,4 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return cookieService.extractAccessToken(request).orElse(null);
     }
 }
+

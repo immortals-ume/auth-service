@@ -3,6 +3,7 @@ package com.immortals.auth.service.security;
 import com.immortals.auth.service.db.annotation.ReadOnly;
 import com.immortals.auth.service.domain.entity.User;
 import com.immortals.auth.service.repository.AuthRepository;
+import org.springframework.context.annotation.Primary;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -12,6 +13,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Primary
 @Service
 public class UserDetailsServiceImpl implements UserDetailsService {
 
@@ -43,3 +45,4 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     }
 
 }
+

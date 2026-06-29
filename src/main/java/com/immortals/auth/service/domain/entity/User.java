@@ -2,6 +2,7 @@ package com.immortals.auth.service.domain.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.immortals.auth.service.domain.Auditable;
+import com.immortals.auth.service.domain.enums.AuthProvider;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -51,10 +52,16 @@ public class User extends Auditable {
     @Column(name = "user_name", nullable = false, length = 16)
     private String userName;
     @JsonIgnore
-    @NotBlank
     @Size(min = 8, max = 255)
-    @Column(name = "password", nullable = false, length = 255)
+    @Column(name = "password", length = 255)
     private String password;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "auth_provider", nullable = false, length = 30)
+    private AuthProvider authProvider = AuthProvider.FORM_LOGIN;
+
+    @Column(name = "provider_id", length = 255)
+    private String providerId;
     @Email
     @NotBlank
     @Size(max = 100)
@@ -66,14 +73,12 @@ public class User extends Auditable {
     private String alternateEmail;
     @Column(name = "email_verified", nullable = false)
     private Boolean emailVerified = false;
-    @NotBlank
     @Size(max = 5)
-    @Column(name = "phone_code", nullable = false, length = 5)
+    @Column(name = "phone_code", length = 5)
     private String phoneCode;
-    @NotBlank
     @Size(min = 10, max = 15)
     @Pattern(regexp = "^(\\+\\d{1,4})?[6-9][0-9]{9}$")
-    @Column(name = "contact_number", nullable = false, length = 15)
+    @Column(name = "contact_number", length = 15)
     private String contactNumber;
     @Size(min = 10, max = 15)
     @Pattern(regexp = "^(\\+\\d{1,4})?[6-9][0-9]{9}$")
@@ -120,14 +125,14 @@ public class User extends Auditable {
 
     @Override
     public boolean equals(Object o) {
-        if (o == null || getClass() != o.getClass()) return false;
-        User user = (User) o;
-        return Objects.equals(firstName, user.firstName) && Objects.equals(middleName, user.middleName) && Objects.equals(lastName, user.lastName) && Objects.equals(userName, user.userName) && Objects.equals(password, user.password) && Objects.equals(email, user.email) && Objects.equals(alternateEmail, user.alternateEmail) && Objects.equals(emailVerified, user.emailVerified) && Objects.equals(phoneCode, user.phoneCode) && Objects.equals(contactNumber, user.contactNumber) && Objects.equals(alternateContact, user.alternateContact) && Objects.equals(phoneNumberVerified, user.phoneNumberVerified) && Objects.equals(loginTime, user.loginTime) && Objects.equals(logoutTime, user.logoutTime) && Objects.equals(accountNonExpired, user.accountNonExpired) && Objects.equals(accountNonLocked, user.accountNonLocked) && Objects.equals(accountLocked, user.accountLocked) && Objects.equals(credentialsNonExpired, user.credentialsNonExpired) && Objects.equals(activeInd, user.activeInd) && Objects.equals(userAddresses, user.userAddresses) && Objects.equals(roles, user.roles);
+        if (this == o) return true;
+        if (!(o instanceof User user)) return false;
+        return getId() != null && Objects.equals(getId(), user.getId());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(firstName, middleName, lastName, userName, password, email, alternateEmail, emailVerified, phoneCode, contactNumber, alternateContact, phoneNumberVerified, loginTime, logoutTime, accountNonExpired, accountNonLocked, accountLocked, credentialsNonExpired, activeInd, userAddresses, roles);
+        return getClass().hashCode();
     }
 
     public String firstName() {
@@ -214,6 +219,22 @@ public class User extends Auditable {
         return roles;
     }
 
+    public AuthProvider authProvider() {
+        return authProvider;
+    }
+
+    public String providerId() {
+        return providerId;
+    }
+
+    public void setAuthProvider(AuthProvider authProvider) {
+        this.authProvider = authProvider;
+    }
+
+    public void setProviderId(String providerId) {
+        this.providerId = providerId;
+    }
+
     public static final class Builder extends Auditable.Builder<User, Builder> {
 
         private String firstName;
@@ -237,8 +258,20 @@ public class User extends Auditable {
         private Boolean activeInd;
         private List<UserAddress> userAddresses;
         private Set<Roles> roles;
+        private AuthProvider authProvider = AuthProvider.FORM_LOGIN;
+        private String providerId;
 
         private Builder() {
+        }
+
+        public Builder authProvider(AuthProvider authProvider) {
+            this.authProvider = authProvider;
+            return self();
+        }
+
+        public Builder providerId(String providerId) {
+            this.providerId = providerId;
+            return self();
         }
 
         public Builder firstName(String firstName) {
@@ -371,6 +404,8 @@ public class User extends Auditable {
             user.activeInd = this.activeInd;
             user.roles = this.roles;
             user.userAddresses = this.userAddresses;
+            user.authProvider = this.authProvider;
+            user.providerId = this.providerId;
 
             return user;
         }

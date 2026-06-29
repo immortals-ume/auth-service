@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <!--
+        OAuth2 / Social login support.
+        password becomes nullable because OAuth2 users authenticate through their provider.
+        auth_provider tracks the origin: FORM_LOGIN | GITHUB | GMAIL | SERVICE2SERVICE
+        provider_id is the external subject identifier returned by the OAuth2 provider.
+    -->
+
+    <changeSet id="v1-017-users-password-nullable" author="immortals-ume">
+        <dropNotNullConstraint
+                schemaName="user_auth"
+                tableName="users"
+                columnName="password"
+                columnDataType="VARCHAR(255)"/>
+
+        <rollback>
+            <!-- Only safe if no nulls exist; restore constraint manually if needed. -->
+            <addNotNullConstraint schemaName="user_auth" tableName="users"
+                                  columnName="password" columnDataType="VARCHAR(255)"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="v1-017-users-auth-provider" author="immortals-ume">
+        <addColumn schemaName="user_auth" tableName="users">
+            <column name="auth_provider" type="VARCHAR(30)" defaultValue="FORM_LOGIN">
+                <constraints nullable="false"/>
+            </column>
+            <column name="provider_id" type="VARCHAR(255)"/>
+        </addColumn>
+
+        <createIndex indexName="idx_users_auth_provider" tableName="users" schemaName="user_auth">
+            <column name="auth_provider"/>
+        </createIndex>
+
+        <rollback>
+            <dropIndex indexName="idx_users_auth_provider" tableName="users" schemaName="user_auth"/>
+            <dropColumn schemaName="user_auth" tableName="users" columnName="auth_provider"/>
+            <dropColumn schemaName="user_auth" tableName="users" columnName="provider_id"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

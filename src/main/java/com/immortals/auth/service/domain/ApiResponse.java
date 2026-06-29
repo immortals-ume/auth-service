@@ -102,7 +102,6 @@ public record ApiResponse<T>(
         );
     }
 
-
     public static <T> ApiResponse<T> informational(String message, String code) {
         HttpStatus status = ErrorCode.getHttpStatus(code);
         return of(status, true, null, message, code, null, null, null);
@@ -111,7 +110,6 @@ public record ApiResponse<T>(
     public static <T> ApiResponse<T> processing(String message) {
         return informational(message, ErrorCode.INFO_PROCESSING);
     }
-
 
     public static <T> ApiResponse<T> error(
             String message,
@@ -175,7 +173,6 @@ public record ApiResponse<T>(
                 validationErrors
         );
     }
-
 
     public record ValidationError(
             String field,

@@ -1,6 +1,6 @@
 package com.immortals.auth.service.service.impl;
 
-import com.immortals.auth.service.domain.CookieProperties;
+import com.immortals.auth.service.config.CookieProperties;
 import com.immortals.auth.service.service.CookieService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;

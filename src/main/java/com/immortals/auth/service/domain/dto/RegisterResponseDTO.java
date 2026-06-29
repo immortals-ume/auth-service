@@ -6,3 +6,4 @@ public record RegisterResponseDTO(
         String message
 ) {
 }
+

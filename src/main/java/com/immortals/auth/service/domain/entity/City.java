@@ -1,6 +1,5 @@
 package com.immortals.auth.service.domain.entity;
 
-
 import com.immortals.auth.service.domain.Auditable;
 import jakarta.persistence.*;
 
@@ -34,3 +33,4 @@ public class City extends Auditable {
     @Column(name = "active_ind", nullable = false)
     private Boolean activeInd;
 }
+

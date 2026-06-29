@@ -1,15 +1,23 @@
 package com.immortals.auth.service.controller;
 
+import com.immortals.auth.service.audit.AuditSeverity;
+import com.immortals.auth.service.audit.AuditType;
+import com.immortals.auth.service.audit.annotation.AuditAction;
 import com.immortals.auth.service.domain.ApiResponse;
 import com.immortals.auth.service.domain.dto.RegisterRequestDTO;
 import com.immortals.auth.service.domain.dto.RegisterResponseDTO;
+import com.immortals.auth.service.domain.dto.ResetCredentials;
+import com.immortals.auth.service.domain.dto.UserResponseDTO;
 import com.immortals.auth.service.domain.dto.VerifyPhoneOtpRequest;
 import com.immortals.auth.service.service.UserService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+@Validated
 @RestController
 @RequestMapping("/api/v1/user")
 public class UserController {
@@ -20,6 +28,7 @@ public class UserController {
         this.userService = userService;
     }
 
+    @AuditAction(action = "USER_REGISTRATION", resourceType = "USER")
     @PostMapping(
             value = "/register",
             consumes = MediaType.APPLICATION_JSON_VALUE,
@@ -40,7 +49,7 @@ public class UserController {
     }
 
     @GetMapping("/verify-email/confirm")
-    public ApiResponse<Void> verifyEmail(@RequestParam String token) {
+    public ApiResponse<Void> verifyEmail(@RequestParam @NotBlank String token) {
         userService.verifyEmail(token);
         return ApiResponse.success(null, "Email verified successfully");
     }
@@ -56,4 +65,17 @@ public class UserController {
     public void verifyPhoneOtp(@RequestBody @Valid VerifyPhoneOtpRequest request) {
         userService.verifyPhoneOtp(request.otp());
     }
+
+    @GetMapping("/me")
+    public ApiResponse<UserResponseDTO> getProfile() {
+        return ApiResponse.success(userService.getProfile());
+    }
+
+    @AuditAction(action = "PASSWORD_CHANGE", type = AuditType.SECURITY_AUDIT, severity = AuditSeverity.HIGH, resourceType = "USER")
+    @PutMapping("/change-password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void changePassword(@RequestBody @Valid ResetCredentials credentials) {
+        userService.changePassword(credentials);
+    }
 }
+

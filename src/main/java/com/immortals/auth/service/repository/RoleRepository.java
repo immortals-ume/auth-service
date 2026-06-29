@@ -1,6 +1,5 @@
 package com.immortals.auth.service.repository;
 
-
 import com.immortals.auth.service.domain.entity.Roles;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -22,3 +21,4 @@ public interface RoleRepository extends JpaRepository<Roles, Long> {
 
     boolean existsByRoleName(String roleName);
 }
+

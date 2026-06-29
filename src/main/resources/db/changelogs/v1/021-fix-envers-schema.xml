@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <!--
+        Idempotent repair changeset for Hibernate Envers audit tables.
+
+        Handles two failure modes that can leave the DB in a broken state:
+          1. The user_audit schema (or tables) were dropped after Liquibase marked
+             the 012 changesets as "ran" — tables need to be recreated.
+          2. The 012 changesets ran with the old column name "revtype" while Envers
+             is configured with revision-type-field-name=rev_type — column needs rename.
+
+        Each create-if-missing changeset uses preConditions onFail="MARK_RAN" so it
+        is silently skipped when the table already exists.
+        Each rename changeset uses preConditions onFail="MARK_RAN" so it is silently
+        skipped when revtype column is not present (already renamed or freshly created).
+    -->
+
+    <!-- Ensure user_audit schema exists (defensive: harmless no-op if already present) -->
+    <changeSet id="v1-021-ensure-user-audit-schema" author="immortals-ume" runAlways="true">
+        <sql>CREATE SCHEMA IF NOT EXISTS user_audit;</sql>
+    </changeSet>
+
+    <!-- Ensure revinfo_seq exists -->
+    <changeSet id="v1-021-ensure-revinfo-seq" author="immortals-ume" runAlways="true">
+        <sql>CREATE SEQUENCE IF NOT EXISTS user_audit.revinfo_seq START WITH 1 INCREMENT BY 1 MINVALUE 1 NO CYCLE;</sql>
+    </changeSet>
+
+    <!-- revinfo: create if missing -->
+    <changeSet id="v1-021-ensure-revinfo" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="revinfo" schemaName="user_audit"/></not>
+        </preConditions>
+        <createTable tableName="revinfo" schemaName="user_audit">
+            <column name="id"         type="INT" defaultValueComputed="nextval('user_audit.revinfo_seq')">
+                <constraints primaryKey="true" primaryKeyName="pk_revinfo" nullable="false"/>
+            </column>
+            <column name="timestamp"  type="BIGINT"><constraints nullable="false"/></column>
+            <column name="username"   type="VARCHAR(255)"/>
+            <column name="ip_address" type="VARCHAR(255)"/>
+            <column name="user_agent" type="VARCHAR(255)"/>
+        </createTable>
+        <createIndex indexName="idx_revinfo_timestamp_021" tableName="revinfo" schemaName="user_audit">
+            <column name="timestamp"/>
+        </createIndex>
+    </changeSet>
+
+    <!-- role_AUD: create if missing -->
+    <changeSet id="v1-021-ensure-role-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="role_AUD" schemaName="user_audit"/></not>
+        </preConditions>
+        <createTable tableName="role_AUD" schemaName="user_audit">
+            <column name="id"           type="BIGINT"><constraints nullable="false"/></column>
+            <column name="rev"          type="INT"><constraints nullable="false"/></column>
+            <column name="rev_type"     type="SMALLINT"/>
+            <column name="version"      type="BIGINT"/>
+            <column name="role_id"      type="BIGINT"/>
+            <column name="role_name"    type="VARCHAR(20)"/>
+            <column name="description"  type="VARCHAR(200)"/>
+            <column name="active_ind"   type="BOOLEAN"/>
+            <column name="created_by"   type="VARCHAR(255)"/>
+            <column name="created_date" type="TIMESTAMP"/>
+            <column name="updated_by"   type="VARCHAR(255)"/>
+            <column name="updated_date" type="TIMESTAMP"/>
+            <column name="deleted_by"   type="VARCHAR(255)"/>
+            <column name="deleted_date" type="TIMESTAMP"/>
+        </createTable>
+        <addPrimaryKey constraintName="pk_role_aud_021"
+                       tableName="role_AUD" schemaName="user_audit"
+                       columnNames="id, rev"/>
+        <addForeignKeyConstraint constraintName="fk_role_aud_revinfo_021"
+                                 baseTableSchemaName="user_audit" baseTableName="role_AUD" baseColumnNames="rev"
+                                 referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+    <!-- role_AUD: rename revtype → rev_type if old column name exists -->
+    <changeSet id="v1-021-rename-revtype-role-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="role_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="role_AUD" schemaName="user_audit"
+                      oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+    <!-- permission_AUD: create if missing -->
+    <changeSet id="v1-021-ensure-permission-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="permission_AUD" schemaName="user_audit"/></not>
+        </preConditions>
+        <createTable tableName="permission_AUD" schemaName="user_audit">
+            <column name="id"              type="BIGINT"><constraints nullable="false"/></column>
+            <column name="rev"             type="INT"><constraints nullable="false"/></column>
+            <column name="rev_type"        type="SMALLINT"/>
+            <column name="version"         type="BIGINT"/>
+            <column name="permission_name" type="VARCHAR(50)"/>
+            <column name="description"     type="VARCHAR(200)"/>
+            <column name="active_ind"      type="BOOLEAN"/>
+            <column name="created_by"      type="VARCHAR(255)"/>
+            <column name="created_date"    type="TIMESTAMP"/>
+            <column name="updated_by"      type="VARCHAR(255)"/>
+            <column name="updated_date"    type="TIMESTAMP"/>
+            <column name="deleted_by"      type="VARCHAR(255)"/>
+            <column name="deleted_date"    type="TIMESTAMP"/>
+        </createTable>
+        <addPrimaryKey constraintName="pk_permission_aud_021"
+                       tableName="permission_AUD" schemaName="user_audit"
+                       columnNames="id, rev"/>
+        <addForeignKeyConstraint constraintName="fk_permission_aud_revinfo_021"
+                                 baseTableSchemaName="user_audit" baseTableName="permission_AUD" baseColumnNames="rev"
+                                 referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+    <!-- permission_AUD: rename revtype → rev_type if old column name exists -->
+    <changeSet id="v1-021-rename-revtype-permission-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="permission_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="permission_AUD" schemaName="user_audit"
+                      oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+    <!-- role_permission_AUD: create if missing (ManyToMany join audit table) -->
+    <changeSet id="v1-021-ensure-role-permission-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="role_permission_AUD" schemaName="user_audit"/></not>
+        </preConditions>
+        <createTable tableName="role_permission_AUD" schemaName="user_audit">
+            <column name="role_id"       type="BIGINT"><constraints nullable="false"/></column>
+            <column name="permission_id" type="BIGINT"><constraints nullable="false"/></column>
+            <column name="rev"           type="INT"><constraints nullable="false"/></column>
+            <column name="rev_type"      type="SMALLINT"/>
+        </createTable>
+        <addPrimaryKey constraintName="pk_role_permission_aud_021"
+                       tableName="role_permission_AUD" schemaName="user_audit"
+                       columnNames="role_id, permission_id, rev"/>
+        <addForeignKeyConstraint constraintName="fk_role_permission_aud_revinfo_021"
+                                 baseTableSchemaName="user_audit" baseTableName="role_permission_AUD" baseColumnNames="rev"
+                                 referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+    <!-- login_attempt_AUD: create if missing -->
+    <changeSet id="v1-021-ensure-login-attempt-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="login_attempt_AUD" schemaName="user_audit"/></not>
+        </preConditions>
+        <createTable tableName="login_attempt_AUD" schemaName="user_audit">
+            <column name="id"               type="BIGINT"><constraints nullable="false"/></column>
+            <column name="rev"              type="INT"><constraints nullable="false"/></column>
+            <column name="rev_type"         type="SMALLINT"/>
+            <column name="version"          type="BIGINT"/>
+            <column name="username"         type="VARCHAR(100)"/>
+            <column name="ip_address"       type="VARCHAR(45)"/>
+            <column name="user_agent"       type="VARCHAR(500)"/>
+            <column name="failed_attempts"  type="BIGINT"/>
+            <column name="account_blocked"  type="BOOLEAN"/>
+            <column name="blocked_at"       type="TIMESTAMP"/>
+            <column name="block_expires_at" type="TIMESTAMP"/>
+            <column name="last_attempt_at"  type="TIMESTAMP"/>
+            <column name="last_success_at"  type="TIMESTAMP"/>
+            <column name="active_ind"       type="BOOLEAN"/>
+            <column name="created_by"       type="VARCHAR(255)"/>
+            <column name="created_date"     type="TIMESTAMP"/>
+            <column name="updated_by"       type="VARCHAR(255)"/>
+            <column name="updated_date"     type="TIMESTAMP"/>
+            <column name="deleted_by"       type="VARCHAR(255)"/>
+            <column name="deleted_date"     type="TIMESTAMP"/>
+        </createTable>
+        <addPrimaryKey constraintName="pk_login_attempt_aud_021"
+                       tableName="login_attempt_AUD" schemaName="user_audit"
+                       columnNames="id, rev"/>
+        <addForeignKeyConstraint constraintName="fk_login_attempt_aud_revinfo_021"
+                                 baseTableSchemaName="user_audit" baseTableName="login_attempt_AUD" baseColumnNames="rev"
+                                 referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+    <!-- login_attempt_AUD: rename revtype → rev_type if old column name exists -->
+    <changeSet id="v1-021-rename-revtype-login-attempt-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="login_attempt_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="login_attempt_AUD" schemaName="user_audit"
+                      oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+    <!-- user_address_AUD: create if missing (user_id excluded — @NotAudited in entity) -->
+    <changeSet id="v1-021-ensure-user-address-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="user_address_AUD" schemaName="user_audit"/></not>
+        </preConditions>
+        <createTable tableName="user_address_AUD" schemaName="user_audit">
+            <column name="id"                type="BIGINT"><constraints nullable="false"/></column>
+            <column name="rev"               type="INT"><constraints nullable="false"/></column>
+            <column name="rev_type"          type="SMALLINT"/>
+            <column name="version"           type="BIGINT"/>
+            <column name="address_uuid"      type="VARCHAR(36)"/>
+            <column name="label"             type="VARCHAR(50)"/>
+            <column name="address_line1"     type="VARCHAR(255)"/>
+            <column name="address_line2"     type="VARCHAR(255)"/>
+            <column name="landmark"          type="VARCHAR(255)"/>
+            <column name="pincode"           type="VARCHAR(6)"/>
+            <column name="address_type"      type="VARCHAR(20)"/>
+            <column name="is_default"        type="BOOLEAN"/>
+            <column name="status"            type="VARCHAR(20)"/>
+            <column name="is_verified"       type="BOOLEAN"/>
+            <column name="is_po_box"         type="BOOLEAN"/>
+            <column name="timezone"          type="VARCHAR(50)"/>
+            <column name="language_code"     type="VARCHAR(5)"/>
+            <column name="formatted_address" type="TEXT"/>
+            <column name="latitude"          type="NUMERIC(10,7)"/>
+            <column name="longitude"         type="NUMERIC(10,7)"/>
+            <column name="country_id"        type="BIGINT"/>
+            <column name="state_id"          type="BIGINT"/>
+            <column name="city_id"           type="BIGINT"/>
+            <column name="created_by"        type="VARCHAR(255)"/>
+            <column name="created_date"      type="TIMESTAMP"/>
+            <column name="updated_by"        type="VARCHAR(255)"/>
+            <column name="updated_date"      type="TIMESTAMP"/>
+            <column name="deleted_by"        type="VARCHAR(255)"/>
+            <column name="deleted_date"      type="TIMESTAMP"/>
+        </createTable>
+        <addPrimaryKey constraintName="pk_user_address_aud_021"
+                       tableName="user_address_AUD" schemaName="user_audit"
+                       columnNames="id, rev"/>
+        <addForeignKeyConstraint constraintName="fk_user_address_aud_revinfo_021"
+                                 baseTableSchemaName="user_audit" baseTableName="user_address_AUD" baseColumnNames="rev"
+                                 referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+    <!-- user_address_AUD: rename revtype → rev_type if old column name exists -->
+    <changeSet id="v1-021-rename-revtype-user-address-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="user_address_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="user_address_AUD" schemaName="user_audit"
+                      oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+    <!-- countries_AUD: create if missing -->
+    <changeSet id="v1-021-ensure-countries-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="countries_AUD" schemaName="user_audit"/></not>
+        </preConditions>
+        <createTable tableName="countries_AUD" schemaName="user_audit">
+            <column name="id"           type="BIGINT"><constraints nullable="false"/></column>
+            <column name="rev"          type="INT"><constraints nullable="false"/></column>
+            <column name="rev_type"     type="SMALLINT"/>
+            <column name="version"      type="BIGINT"/>
+            <column name="country_name" type="VARCHAR(100)"/>
+            <column name="country_code" type="VARCHAR(5)"/>
+            <column name="active_ind"   type="BOOLEAN"/>
+            <column name="created_by"   type="VARCHAR(255)"/>
+            <column name="created_date" type="TIMESTAMP"/>
+            <column name="updated_by"   type="VARCHAR(255)"/>
+            <column name="updated_date" type="TIMESTAMP"/>
+            <column name="deleted_by"   type="VARCHAR(255)"/>
+            <column name="deleted_date" type="TIMESTAMP"/>
+        </createTable>
+        <addPrimaryKey constraintName="pk_countries_aud_021"
+                       tableName="countries_AUD" schemaName="user_audit"
+                       columnNames="id, rev"/>
+        <addForeignKeyConstraint constraintName="fk_countries_aud_revinfo_021"
+                                 baseTableSchemaName="user_audit" baseTableName="countries_AUD" baseColumnNames="rev"
+                                 referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+    <!-- countries_AUD: rename revtype → rev_type if old column name exists -->
+    <changeSet id="v1-021-rename-revtype-countries-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="countries_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="countries_AUD" schemaName="user_audit"
+                      oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+    <!-- states_AUD: create if missing -->
+    <changeSet id="v1-021-ensure-states-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="states_AUD" schemaName="user_audit"/></not>
+        </preConditions>
+        <createTable tableName="states_AUD" schemaName="user_audit">
+            <column name="id"           type="BIGINT"><constraints nullable="false"/></column>
+            <column name="rev"          type="INT"><constraints nullable="false"/></column>
+            <column name="rev_type"     type="SMALLINT"/>
+            <column name="version"      type="BIGINT"/>
+            <column name="state_name"   type="VARCHAR(100)"/>
+            <column name="state_code"   type="VARCHAR(10)"/>
+            <column name="country_id"   type="BIGINT"/>
+            <column name="active_ind"   type="BOOLEAN"/>
+            <column name="created_by"   type="VARCHAR(255)"/>
+            <column name="created_date" type="TIMESTAMP"/>
+            <column name="updated_by"   type="VARCHAR(255)"/>
+            <column name="updated_date" type="TIMESTAMP"/>
+            <column name="deleted_by"   type="VARCHAR(255)"/>
+            <column name="deleted_date" type="TIMESTAMP"/>
+        </createTable>
+        <addPrimaryKey constraintName="pk_states_aud_021"
+                       tableName="states_AUD" schemaName="user_audit"
+                       columnNames="id, rev"/>
+        <addForeignKeyConstraint constraintName="fk_states_aud_revinfo_021"
+                                 baseTableSchemaName="user_audit" baseTableName="states_AUD" baseColumnNames="rev"
+                                 referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+    <!-- states_AUD: rename revtype → rev_type if old column name exists -->
+    <changeSet id="v1-021-rename-revtype-states-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="states_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="states_AUD" schemaName="user_audit"
+                      oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+    <!-- cities_AUD: create if missing -->
+    <changeSet id="v1-021-ensure-cities-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="cities_AUD" schemaName="user_audit"/></not>
+        </preConditions>
+        <createTable tableName="cities_AUD" schemaName="user_audit">
+            <column name="id"           type="BIGINT"><constraints nullable="false"/></column>
+            <column name="rev"          type="INT"><constraints nullable="false"/></column>
+            <column name="rev_type"     type="SMALLINT"/>
+            <column name="version"      type="BIGINT"/>
+            <column name="city_name"    type="VARCHAR(100)"/>
+            <column name="state_id"     type="BIGINT"/>
+            <column name="active_ind"   type="BOOLEAN"/>
+            <column name="created_by"   type="VARCHAR(255)"/>
+            <column name="created_date" type="TIMESTAMP"/>
+            <column name="updated_by"   type="VARCHAR(255)"/>
+            <column name="updated_date" type="TIMESTAMP"/>
+            <column name="deleted_by"   type="VARCHAR(255)"/>
+            <column name="deleted_date" type="TIMESTAMP"/>
+        </createTable>
+        <addPrimaryKey constraintName="pk_cities_aud_021"
+                       tableName="cities_AUD" schemaName="user_audit"
+                       columnNames="id, rev"/>
+        <addForeignKeyConstraint constraintName="fk_cities_aud_revinfo_021"
+                                 baseTableSchemaName="user_audit" baseTableName="cities_AUD" baseColumnNames="rev"
+                                 referencedTableSchemaName="user_audit" referencedTableName="revinfo" referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+    </changeSet>
+
+    <!-- cities_AUD: rename revtype → rev_type if old column name exists -->
+    <changeSet id="v1-021-rename-revtype-cities-aud" author="immortals-ume">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="cities_AUD" schemaName="user_audit" columnName="revtype"/>
+        </preConditions>
+        <renameColumn tableName="cities_AUD" schemaName="user_audit"
+                      oldColumnName="revtype" newColumnName="rev_type" columnDataType="SMALLINT"/>
+    </changeSet>
+
+</databaseChangeLog>

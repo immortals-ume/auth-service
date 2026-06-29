@@ -19,3 +19,4 @@ public interface VerificationTokenRepository extends JpaRepository<VerificationT
     @Query("DELETE FROM VerificationToken vt WHERE vt.user = :user AND vt.type = :type")
     void deleteByUserAndType(@Param("user") User user, @Param("type") VerificationToken.TokenType type);
 }
+

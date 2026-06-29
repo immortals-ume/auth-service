@@ -1,13 +1,16 @@
-# ──────────────────────────────────────────────────────────────────────────────────────────────
-# PROD profile overrides.
-# Vault + Config Server are MANDATORY here (no optional: prefix).
-# Set env vars: VAULT_URI, VAULT_ROLE_ID, VAULT_SECRET_ID, CONFIG_SERVER_URI, EUREKA_URI
-# ──────────────────────────────────────────────────────────────────────────────────────────────
-
 spring:
   devtools:
     restart:
       enabled: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        spring.json.add.type.headers: false
   config:
     import:
       - "vault://"
@@ -48,6 +51,31 @@ management:
     enabled: true
     sampling:
       probability: 0.1
+
+auth:
+  kafka:
+    topics:
+      email-verification: auth.notification.email-verification
+      password-reset: auth.notification.password-reset
+      otp: auth.notification.otp
+    partitions: 3
+    replication-factor: 3
+
+datasource:
+  write:
+    pool-name: write-pool-prod
+    maximum-pool-size: 20
+    minimum-idle: 5
+    connection-timeout: 30000
+    idle-timeout: 600000
+    max-lifetime: 1800000
+  read:
+    pool-name: read-pool-prod
+    maximum-pool-size: 30
+    minimum-idle: 10
+    connection-timeout: 30000
+    idle-timeout: 600000
+    max-lifetime: 1800000
 
 logging:
   level:

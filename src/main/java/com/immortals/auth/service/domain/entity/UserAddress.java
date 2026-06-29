@@ -1,6 +1,5 @@
 package com.immortals.auth.service.domain.entity;
 
-
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.immortals.auth.service.domain.Auditable;
 import com.immortals.auth.service.domain.helpers.AddressStatus;
@@ -111,3 +110,4 @@ public class UserAddress extends Auditable {
     @JoinColumn(name = "city_id", nullable = false)
     private City city;
 }
+

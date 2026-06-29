@@ -5,32 +5,21 @@
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
                             https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
 
-    <!-- Dedicated sequence for SystemAuditUser (allocationSize=1 in entity) -->
-    <changeSet id="v1-014-system-audit-seq" author="immortals-ume">
-        <createSequence sequenceName="system_audit_seq"
-                        startValue="1"
-                        incrementBy="1"
-                        minValue="1"
-                        cycle="false"/>
-        <rollback>
-            <dropSequence sequenceName="system_audit_seq"/>
-        </rollback>
-    </changeSet>
+    <!--
+        system_audit_seq is created in 002-create-sequences.xml (public schema).
+        SYSTEM_AUDIT lives in the public schema — used by AuditorAwareImpl to
+        resolve the audit principal for system-initiated operations.
+    -->
 
-    <!-- SYSTEM_AUDIT table — no schema annotation on entity, uses public schema -->
     <changeSet id="v1-014-system-audit-table" author="immortals-ume">
         <createTable tableName="SYSTEM_AUDIT">
-            <column name="id"          type="BIGINT"       defaultValueSequenceNext="system_audit_seq"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="id"          type="BIGINT" defaultValueComputed="nextval('public.system_audit_seq')">
+                <constraints primaryKey="true" primaryKeyName="pk_system_audit" nullable="false"/>
+            </column>
             <column name="username"    type="VARCHAR(255)"><constraints nullable="false"/></column>
             <column name="is_active"   type="BOOLEAN"><constraints nullable="false"/></column>
             <column name="description" type="VARCHAR(255)"/>
         </createTable>
-
-        <!-- Only one row should be active at a time -->
-        <addUniqueConstraint constraintName="uk_system_audit_active"
-                             tableName="SYSTEM_AUDIT"
-                             columnNames="is_active"
-                             deferrable="false"/>
 
         <rollback>
             <dropTable tableName="SYSTEM_AUDIT" cascadeConstraints="true"/>
@@ -40,7 +29,7 @@
     <!-- Seed the system audit user used for created_by in all automated operations -->
     <changeSet id="v1-014-system-audit-seed" author="immortals-ume">
         <insert tableName="SYSTEM_AUDIT">
-            <column name="id"          valueSequenceNext="system_audit_seq"/>
+            <column name="id"          valueComputed="nextval('public.system_audit_seq')"/>
             <column name="username"    value="system"/>
             <column name="is_active"   valueBoolean="true"/>
             <column name="description" value="System account used for automated audit trail entries"/>

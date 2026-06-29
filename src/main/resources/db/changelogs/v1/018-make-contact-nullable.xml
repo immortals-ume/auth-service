@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <!--
+        OAuth2-provisioned users don't have a phone number at registration time.
+        Drop the NOT NULL constraint so those columns can be left null.
+    -->
+    <changeSet id="v1-018-contact-nullable" author="immortals-ume">
+        <dropNotNullConstraint tableName="users" schemaName="user_auth"
+                               columnName="phone_code" columnDataType="VARCHAR(5)"/>
+
+        <rollback>
+            <addNotNullConstraint tableName="users" schemaName="user_auth"
+                                  columnName="phone_code" columnDataType="VARCHAR(5)"
+                                  defaultNullValue=""/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

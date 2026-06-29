@@ -25,8 +25,10 @@ public class AuditingRevisionEntity {
 
     private String username;
 
+    @Column(name = "ip_address")
     private String ipAddress;
 
+    @Column(name = "user_agent")
     private String userAgent;
 
     public int getId() {
@@ -97,3 +99,4 @@ public class AuditingRevisionEntity {
                 '}';
     }
 }
+

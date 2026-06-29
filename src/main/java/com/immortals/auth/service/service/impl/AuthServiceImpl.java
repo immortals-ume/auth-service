@@ -7,16 +7,17 @@ import com.immortals.auth.service.domain.dto.LoginResponseDto;
 import com.immortals.auth.service.domain.dto.ResetPasswordRequest;
 import com.immortals.auth.service.domain.entity.User;
 import com.immortals.auth.service.domain.entity.VerificationToken;
+import com.immortals.auth.service.event.NotificationEventPublisher;
 import com.immortals.auth.service.repository.UserRepository;
 import com.immortals.auth.service.repository.VerificationTokenRepository;
 import com.immortals.auth.service.security.jwt.JwtProvider;
 import com.immortals.auth.service.service.AuthService;
-import com.immortals.auth.service.service.EmailService;
+import com.immortals.auth.service.service.CookieService;
 import com.immortals.auth.service.service.LoginAttemptService;
+import com.immortals.auth.service.service.TokenBlacklistService;
 import com.immortals.auth.service.service.exception.AuthenticationException;
 import com.immortals.auth.service.service.exception.ResourceNotFoundException;
 import com.immortals.auth.service.service.exception.UserException;
-import com.immortals.auth.service.utils.ValidationUtils;
 import com.immortals.logging.api.ILogger;
 import com.immortals.logging.core.LogManager;
 import com.nimbusds.jose.JOSEException;
@@ -46,37 +47,43 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtProvider jwtProvider;
     private final LoginAttemptService loginAttempt;
-    private final CookieServiceImpl cookieServiceImpl;
-    private final TokenBlacklistServiceImpl blacklistService;
+    private final CookieService cookieService;
+    private final TokenBlacklistService blacklistService;
     private final UserRepository userRepository;
     private final VerificationTokenRepository verificationTokenRepository;
-    private final EmailService emailService;
+    private final NotificationEventPublisher eventPublisher;
     private final UserDetailsService userDetailsService;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${auth.refresh-token-expiry-ms}")
     private int refreshTokenExpiryMs;
 
+    @Value("${auth.base-url:http://localhost:8080}")
+    private String baseUrl;
+
+    @Value("${auth.frontend-base-url:http://localhost:3000}")
+    private String frontendBaseUrl;
+
     public AuthServiceImpl(
             AuthenticationManager authenticationManager,
             JwtProvider jwtProvider,
             LoginAttemptService loginAttempt,
-            CookieServiceImpl cookieServiceImpl,
-            TokenBlacklistServiceImpl blacklistService,
+            CookieService cookieService,
+            TokenBlacklistService blacklistService,
             UserRepository userRepository,
             VerificationTokenRepository verificationTokenRepository,
-            EmailService emailService,
+            NotificationEventPublisher eventPublisher,
             UserDetailsService userDetailsService,
             PasswordEncoder passwordEncoder) {
 
         this.authenticationManager = authenticationManager;
         this.jwtProvider = jwtProvider;
         this.loginAttempt = loginAttempt;
-        this.cookieServiceImpl = cookieServiceImpl;
+        this.cookieService = cookieService;
         this.blacklistService = blacklistService;
         this.userRepository = userRepository;
         this.verificationTokenRepository = verificationTokenRepository;
-        this.emailService = emailService;
+        this.eventPublisher = eventPublisher;
         this.userDetailsService = userDetailsService;
         this.passwordEncoder = passwordEncoder;
     }
@@ -88,9 +95,6 @@ public class AuthServiceImpl implements AuthService {
         String username = loginRequestDto.email();
 
         try {
-            ValidationUtils.requireValidEmail(loginRequestDto.email());
-            ValidationUtils.requireValidPassword(loginRequestDto.password());
-            ValidationUtils.requireValidMobile(loginRequestDto.mobileNumber());
             if (loginAttempt.isBlocked(username)) {
                 Duration remaining = loginAttempt.getRemainingBlockTime(username);
                 log.warn("Login blocked for '{}', remaining: {}", username, remaining);
@@ -118,43 +122,33 @@ public class AuthServiceImpl implements AuthService {
             }
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
-
             loginAttempt.loginSucceeded(username);
 
             String accessToken = jwtProvider.generateAccessToken(authentication);
-
-            cookieServiceImpl.addAccessTokenCookie(response, accessToken);
+            cookieService.addAccessTokenCookie(response, accessToken);
 
             String refreshToken = "";
-            if (loginRequestDto.rememberMe()) {
-                refreshToken = jwtProvider.generateRefreshToken(
-                        authentication, refreshTokenExpiryMs);
-                cookieServiceImpl.addRefreshTokenCookie(response, refreshToken);
+            if (Boolean.TRUE.equals(loginRequestDto.rememberMe())) {
+                refreshToken = jwtProvider.generateRefreshToken(authentication, refreshTokenExpiryMs);
+                cookieService.addRefreshTokenCookie(response, refreshToken);
                 log.info("Refresh token cookie set for '{}'.", username);
             }
 
             log.info("User '{}' authenticated successfully.", username);
-            return new LoginResponseDto(
-                    loginRequestDto.email(),
-                    accessToken,
-                    refreshToken,
-                    "Login successful");
+            return new LoginResponseDto(loginRequestDto.email(), accessToken, refreshToken, "Login successful");
 
         } catch (AuthenticationException e) {
             throw e;
         } catch (RuntimeException | JOSEException e) {
             log.error("Login failed for '{}': {}", username, e.getMessage(), e);
-            throw new AuthenticationException(
-                    "Login failed. Please verify your credentials and try again.", e);
+            throw new AuthenticationException("Login failed. Please verify your credentials and try again.", e);
         }
     }
 
     @WriteOnly
     @Override
-    public void logout(HttpServletRequest request,
-                       HttpServletResponse response) {
-
-        cookieServiceImpl.extractAccessToken(request).ifPresent(token -> {
+    public void logout(HttpServletRequest request, HttpServletResponse response) {
+        cookieService.extractAccessToken(request).ifPresent(token -> {
             try {
                 String jti = jwtProvider.getJti(token);
                 long expiry = jwtProvider.getExpiryEpochSecond(token);
@@ -165,7 +159,7 @@ public class AuthServiceImpl implements AuthService {
             }
         });
 
-        cookieServiceImpl.extractRefreshToken(request).ifPresent(token -> {
+        cookieService.extractRefreshToken(request).ifPresent(token -> {
             try {
                 String jti = jwtProvider.getJti(token);
                 long expiry = jwtProvider.getExpiryEpochSecond(token);
@@ -176,16 +170,14 @@ public class AuthServiceImpl implements AuthService {
             }
         });
 
-        cookieServiceImpl.clearAuthCookies(response);
-
+        cookieService.clearAuthCookies(response);
         SecurityContextHolder.clearContext();
-
         log.info("User logged out — cookies cleared and tokens blacklisted.");
     }
 
     @Override
     public LoginResponseDto refresh(HttpServletRequest request, HttpServletResponse response) {
-        String refreshToken = cookieServiceImpl.extractRefreshToken(request)
+        String refreshToken = cookieService.extractRefreshToken(request)
                 .orElseThrow(() -> new AuthenticationException("No refresh token found"));
 
         if (!jwtProvider.validateToken(refreshToken)) {
@@ -204,7 +196,7 @@ public class AuthServiceImpl implements AuthService {
                     new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
 
             String newAccessToken = jwtProvider.generateAccessToken(auth);
-            cookieServiceImpl.addAccessTokenCookie(response, newAccessToken);
+            cookieService.addAccessTokenCookie(response, newAccessToken);
 
             log.info("Access token refreshed for '{}'.", username);
             return new LoginResponseDto(username, newAccessToken, "", "Token refreshed");
@@ -225,7 +217,6 @@ public class AuthServiceImpl implements AuthService {
         User user = userRepository.findByEmail(email).orElse(null);
 
         if (user == null) {
-            // Don't reveal whether email exists — silently succeed
             log.warn("Forgot-password request for unknown email: {}", email);
             return;
         }
@@ -241,8 +232,9 @@ public class AuthServiceImpl implements AuthService {
                 .build();
         verificationTokenRepository.save(vt);
 
-        emailService.sendPasswordReset(email, tokenValue);
-        log.info("Password reset token issued for '{}'.", email);
+        String resetLink = frontendBaseUrl + "/reset-password?token=" + tokenValue;
+        eventPublisher.publishPasswordReset(email, resetLink);
+        log.info("Password reset event published for '{}'.", email);
     }
 
     @WriteOnly
@@ -271,3 +263,4 @@ public class AuthServiceImpl implements AuthService {
         log.info("Password reset successfully for user id={}.", vt.user().getId());
     }
 }
+

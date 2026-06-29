@@ -1,35 +1,41 @@
 package com.immortals.auth.service.service.impl;
 
+import com.immortals.auth.service.domain.entity.BlacklistedToken;
+import com.immortals.auth.service.repository.BlacklistedTokenRepository;
 import com.immortals.auth.service.service.TokenBlacklistService;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 
 @Component
 public class TokenBlacklistServiceImpl implements TokenBlacklistService {
 
-    private final Map<String, Long> blacklist = new ConcurrentHashMap<>();
+    private final BlacklistedTokenRepository repository;
 
+    public TokenBlacklistServiceImpl(BlacklistedTokenRepository repository) {
+        this.repository = repository;
+    }
+
+    @Override
+    @Transactional
     public void blacklist(String jti, long expiresAtEpochSecond) {
-        blacklist.put(jti, expiresAtEpochSecond);
-        evictExpired();
+        repository.save(new BlacklistedToken(jti, Instant.ofEpochSecond(expiresAtEpochSecond)));
     }
 
+    @Override
+    @Transactional(readOnly = true)
     public boolean isBlacklisted(String jti) {
-        Long expiry = blacklist.get(jti);
-        if (expiry == null) return false;
-        if (Instant.now().getEpochSecond() > expiry) {
-            blacklist.remove(jti);
-            return false;
-        }
-        return true;
+        return repository.findById(jti)
+                .map(t -> Instant.now().isBefore(t.getExpiresAt()))
+                .orElse(false);
     }
 
-    private void evictExpired() {
-        long now = Instant.now().getEpochSecond();
-        blacklist.entrySet().removeIf(e -> e.getValue() < now);
+    @Scheduled(fixedDelay = 300_000)
+    @Transactional
+    public void evictExpired() {
+        repository.deleteByExpiresAtBefore(Instant.now());
     }
 }
+

@@ -46,3 +46,4 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(ipAddressInterceptor);
     }
 }
+

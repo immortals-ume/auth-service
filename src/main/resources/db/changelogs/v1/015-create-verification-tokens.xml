@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <!--
+        verification_token_seq is created in 002-create-sequences.xml (user_auth schema).
+        Stores email-verification and password-reset tokens (TTL enforced in application).
+          EMAIL_VERIFICATION: 24h
+          PASSWORD_RESET:      1h
+    -->
+    <changeSet id="v1-015-verification-tokens" author="immortals-ume">
+        <createTable tableName="verification_tokens" schemaName="user_auth">
+            <column name="id" type="BIGINT" defaultValueComputed="nextval('user_auth.verification_token_seq')">
+                <constraints primaryKey="true" primaryKeyName="pk_verification_tokens" nullable="false"/>
+            </column>
+            <column name="version" type="BIGINT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="token" type="VARCHAR(36)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uk_vt_token"/>
+            </column>
+            <column name="type" type="VARCHAR(30)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="user_id" type="BIGINT">
+                <constraints nullable="false"
+                             foreignKeyName="fk_vt_user"
+                             references="user_auth.users(id)"/>
+            </column>
+            <column name="expires_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
+            <column name="used" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <!-- Auditable -->
+            <column name="created_by"   type="VARCHAR(255)"><constraints nullable="false"/></column>
+            <column name="created_date" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
+            <column name="updated_by"   type="VARCHAR(255)"/>
+            <column name="updated_date" type="TIMESTAMPTZ"/>
+            <column name="deleted_by"   type="VARCHAR(255)"/>
+            <column name="deleted_date" type="TIMESTAMPTZ"/>
+        </createTable>
+
+        <createIndex tableName="verification_tokens" schemaName="user_auth" indexName="idx_vt_token">
+            <column name="token"/>
+        </createIndex>
+        <createIndex tableName="verification_tokens" schemaName="user_auth" indexName="idx_vt_user_type">
+            <column name="user_id"/>
+            <column name="type"/>
+        </createIndex>
+        <createIndex tableName="verification_tokens" schemaName="user_auth" indexName="idx_vt_expires_at">
+            <column name="expires_at"/>
+        </createIndex>
+
+        <rollback>
+            <dropTable tableName="verification_tokens" schemaName="user_auth" cascadeConstraints="true"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

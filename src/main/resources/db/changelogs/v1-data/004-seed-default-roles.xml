@@ -7,7 +7,7 @@
 
     <changeSet id="v1-data-004-default-roles" author="immortals-ume">
         <insert tableName="role" schemaName="user_auth">
-            <column name="id"           valueSequenceNext="role_seq"/>
+            <column name="id"           valueComputed="nextval('user_auth.role_seq')"/>
             <column name="version"      valueNumeric="0"/>
             <column name="role_id"      valueNumeric="1"/>
             <column name="role_name"    value="ROLE_USER"/>
@@ -18,7 +18,7 @@
         </insert>
 
         <insert tableName="role" schemaName="user_auth">
-            <column name="id"           valueSequenceNext="role_seq"/>
+            <column name="id"           valueComputed="nextval('user_auth.role_seq')"/>
             <column name="version"      valueNumeric="0"/>
             <column name="role_id"      valueNumeric="2"/>
             <column name="role_name"    value="ROLE_ADMIN"/>

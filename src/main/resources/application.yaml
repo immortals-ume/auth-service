@@ -1,6 +1,11 @@
 server:
   port: ${SERVER_PORT:8080}
   address: ${SERVER_ADDRESS:0.0.0.0}
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 1024
 
 spring:
   application:
@@ -8,12 +13,78 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+  sql:
+    init:
+      mode: never
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        spring.json.add.type.headers: false
+
+  liquibase:
+    change-log: classpath:db/changelog-master.xml
+    enabled: true
+    liquibase-schema: public
+
+  devtools:
+    restart:
+      enabled: true
+      additional-paths: src/main/java
+      exclude: static/**,public/**
+      livereload:
+        enabled: true
+
+  jpa:
+    open-in-view: false
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:your-google-client-id}
+            client-secret: ${GOOGLE_CLIENT_SECRET:your-google-client-secret}
+            scope:
+              - openid
+              - profile
+              - email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          github:
+            client-id: ${GITHUB_CLIENT_ID:your-github-client-id}
+            client-secret: ${GITHUB_CLIENT_SECRET:your-github-client-secret}
+            scope:
+              - read:user
+              - user:email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          google:
+            authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
+            token-uri: https://oauth2.googleapis.com/token
+            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
+            user-name-attribute: sub
+          github:
+            authorization-uri: https://github.com/login/oauth/authorize
+            token-uri: https://github.com/login/oauth/access_token
+            user-info-uri: https://api.github.com/user
+            user-name-attribute: id
+
   config:
     import:
       - "optional:vault://"
       - "optional:configserver:"
 
   cloud:
+    compatibility-verifier:
+      enabled: false
     vault:
       enabled: ${VAULT_ENABLED:false}
       uri: ${VAULT_URI:http://localhost:8200}
@@ -27,6 +98,7 @@ spring:
         application-name: auth-app
       config:
         order: -15
+
     config:
       enabled: ${CONFIG_ENABLED:false}
       uri: ${CONFIG_SERVER_URI:http://localhost:8888}
@@ -38,12 +110,13 @@ spring:
         max-attempts: 6
         max-interval: 2000
         multiplier: 1.1
+
 eureka:
   client:
     enabled: ${EUREKA_ENABLED:false}
     service-url:
       defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
-    register-with-eureka: false
+    register-with-eureka: true
     fetch-registry: false
     registry-fetch-interval-seconds: 30
   instance:
@@ -56,14 +129,150 @@ eureka:
       zone: primary
       version: ${project.version:1.0.0}
 
-
 management:
   server:
     port: ${MANAGEMENT_PORT:8081}
   endpoints:
     web:
       exposure:
-        include: "health,info,metrics"
+        include: "*"
   endpoint:
     health:
-      show-details: when-authorized
+      show-details: always
+      probes:
+        enabled: true
+  info:
+    build:
+      enabled: true
+    git:
+      enabled: true
+      mode: simple
+    java:
+      enabled: true
+    os:
+      enabled: true
+  auditevents:
+    enabled: true
+  tracing:
+    enabled: false
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+logging:
+  pattern:
+    level: "%5p [traceId=%X{traceId},spanId=%X{spanId}]"
+  level:
+    com.immortals.auth.service: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.tool.schema.internal.SchemaCreatorImpl: TRACE
+    org.springframework.cloud.vault: DEBUG
+    org.springframework.cloud.config: DEBUG
+    org.springframework: INFO
+
+datasource:
+  write:
+    url: jdbc:postgresql://localhost:5432/user_db
+    username: admin
+    password: admin
+    driver-class-name: org.postgresql.Driver
+    pool-name: write-pool-dev
+    maximum-pool-size: 5
+    minimum-idle: 2
+    connection-timeout: 30000
+    idle-timeout: 600000
+    max-lifetime: 1800000
+
+  read:
+    url: jdbc:postgresql://localhost:5432/user_db
+    username: replicator
+    password: replicator
+    driver-class-name: org.postgresql.Driver
+    pool-name: read-pool-dev
+    maximum-pool-size: 5
+    minimum-idle: 2
+    connection-timeout: 30000
+    idle-timeout: 600000
+    max-lifetime: 1800000
+
+  core:
+    show-sql: true
+    generate-ddl: false
+    hibernate:
+      ddl-auto: validate
+      dialect: org.hibernate.dialect.PostgreSQLDialect
+      format-sql: true
+      envers:
+        audit-table-suffix: _aud
+        revision-field-name: rev
+        revision-type-field-name: rev_type
+        store-data-at-delete: true
+        default-schema: user_audit
+
+auth:
+  jwt-issuer: http://localhost:8080
+  base-url: http://localhost:8080
+  frontend-base-url: http://localhost:3000
+
+  access-token-expiry-ms: 900000
+  refresh-token-expiry-ms: 604800000
+
+  max-login-attempts: 5
+  login-block-duration-minutes: 15
+
+  oauth2:
+    redirect-uri: ${OAUTH2_REDIRECT_URI:http://localhost:3000/oauth2/callback}
+
+  service-clients:
+    clients:
+      - client-id: catalog-service
+        client-secret: "{noop}catalog-dev-secret"
+        roles:
+          - ROLE_SERVICE
+      - client-id: order-service
+        client-secret: "{noop}order-dev-secret"
+        roles:
+          - ROLE_SERVICE
+
+  kafka:
+    topics:
+      email-verification: auth.notification.email-verification
+      password-reset: auth.notification.password-reset
+      otp: auth.notification.otp
+    partitions: 3
+    replication-factor: 1
+
+  cache:
+    static-resources:
+      max-age-seconds: 31536000
+
+  cors:
+    allowed-origins:
+      - "http://localhost:3000"
+      - "http://localhost:4200"
+    allowed-methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "PATCH"
+      - "DELETE"
+      - "OPTIONS"
+    allowed-headers:
+      - "*"
+    allow-credentials: true
+    max-age: 3600
+
+  cookie:
+    access-token-name: access_token
+    refresh-token-name: refresh_token
+    domain: localhost
+    path: /
+    secure: false
+    http-only: true
+    access-token-max-age-seconds: 900
+    refresh-token-max-age-seconds: 604800
+
+jwt:
+  key:
+    private-key-path: ${JWT_PRIVATE_KEY_PATH:${user.home}/.shopwire/jwt/private_key.pem}
+    public-key-path: ${JWT_PUBLIC_KEY_PATH:${user.home}/.shopwire/jwt/public_key.pem}
